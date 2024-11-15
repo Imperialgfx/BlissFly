@@ -47,13 +47,12 @@ class CacheManager {
 const app = express();
 const cache = new CacheManager(100);
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.11';
+const VERSION = 'v1.12';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Add performance headers
 app.use((req, res, next) => {
     res.set({
         'X-DNS-Prefetch-Control': 'on',
@@ -62,6 +61,7 @@ app.use((req, res, next) => {
     });
     next();
 });
+
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.send(`
@@ -128,20 +128,50 @@ app.get('/', (req, res) => {
             flex-direction: column;
           }
           .loader {
-            border: 3px solid #f3f3f3;
+            width: 64px;
+            height: 64px;
+            position: relative;
+            background: transparent;
             border-radius: 50%;
-            border-top: 3px solid #007bff;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
+            transform: rotate(45deg);
           }
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+          .loader::before {
+            content: '🪰';
+            position: absolute;
+            font-size: 32px;
+            animation: fly 2s linear infinite;
+          }
+          .loader::after {
+            content: '💩';
+            position: absolute;
+            font-size: 24px;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+          }
+          @keyframes fly {
+            0% { transform: rotate(0deg) translateX(30px) rotate(0deg); }
+            100% { transform: rotate(360deg) translateX(30px) rotate(-360deg); }
           }
           #loadingText {
             margin-top: 10px;
             color: #333;
+          }
+          #error {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1001;
+            text-align: center;
+          }
+          #error button {
+            margin-top: 10px;
           }
         </style>
       </head>
@@ -157,9 +187,16 @@ app.get('/', (req, res) => {
           <div class="loader"></div>
           <div id="loadingText">Loading...</div>
         </div>
+        <div id="error">
+          <h3>Failed to load the page</h3>
+          <p id="errorDetails"></p>
+          <button onclick="retryLastRequest()">Try Again</button>
+          <button onclick="hideError()">Close</button>
+        </div>
         <script>
           let dots = 0;
           let loadingInterval;
+          let lastRequestUrl = '';
 
           function updateLoadingText() {
             const text = 'Loading' + '.'.repeat(dots + 1);
@@ -167,11 +204,29 @@ app.get('/', (req, res) => {
             dots = (dots + 1) % 3;
           }
 
-          document.getElementById('proxyForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const url = document.querySelector('input[name="url"]').value;
+          function showError(message) {
+            const error = document.getElementById('error');
+            const errorDetails = document.getElementById('errorDetails');
+            errorDetails.textContent = message;
+            error.style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+          }
+
+          function hideError() {
+            document.getElementById('error').style.display = 'none';
+          }
+
+          function retryLastRequest() {
+            hideError();
+            if (lastRequestUrl) {
+              loadUrl(lastRequestUrl);
+            }
+          }
+
+          async function loadUrl(url) {
             const loading = document.getElementById('loading');
             loading.style.display = 'flex';
+            lastRequestUrl = url;
             
             loadingInterval = setInterval(updateLoadingText, 500);
 
@@ -184,7 +239,10 @@ app.get('/', (req, res) => {
                 body: JSON.stringify({ url: url })
               });
               
-              if (!response.ok) throw new Error('Network response was not ok');
+              if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.details || 'Failed to load the page');
+              }
               
               const html = await response.text();
               document.open();
@@ -198,100 +256,121 @@ app.get('/', (req, res) => {
               });
             } catch (error) {
               console.error('Error:', error);
-              alert('Failed to load the page. Please try again.');
-              loading.style.display = 'none';
+              showError(error.message);
               if (loadingInterval) clearInterval(loadingInterval);
             }
+          }
+
+          document.getElementById('proxyForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const url = document.querySelector('input[name="url"]').value;
+            loadUrl(url);
           });
         </script>
       </body>
     </html>
   `);
 });
-async function fetchWithRedirects(url, maxRedirects = 5) {
+async function fetchWithRedirects(url, maxRedirects = 5, retryCount = 3) {
     const cachedResponse = cache.get(url);
     if (cachedResponse) return cachedResponse;
 
-    return new Promise((resolve, reject) => {
-        const protocol = url.startsWith('https') ? https : http;
-        const options = new URL(url);
-        
-        const requestOptions = {
-            hostname: options.hostname,
-            path: options.pathname + options.search,
-            method: 'GET',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Host': options.hostname
-            },
-            timeout: 5000
-        };
+    for (let attempt = 0; attempt < retryCount; attempt++) {
+        try {
+            return await new Promise((resolve, reject) => {
+                const protocol = url.startsWith('https') ? https : http;
+                const options = new URL(url);
+                
+                const requestOptions = {
+                    hostname: options.hostname,
+                    path: options.pathname + options.search,
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124',
+                        'Accept': '*/*',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Connection': 'keep-alive',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
+                        'Host': options.hostname
+                    },
+                    timeout: 10000
+                };
 
-        function makeRequest(currentUrl, redirectCount = 0) {
-            const req = protocol.request(currentUrl, requestOptions, (response) => {
-                if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-                    if (redirectCount >= maxRedirects) {
-                        reject(new Error('Too many redirects'));
-                        return;
-                    }
-                    const nextUrl = new URL(response.headers.location, currentUrl);
-                    makeRequest(nextUrl, redirectCount + 1);
-                } else {
-                    const encoding = response.headers['content-encoding'];
-                    let output;
+                function makeRequest(currentUrl, redirectCount = 0) {
+                    const req = protocol.request(currentUrl, requestOptions, (response) => {
+                        if (response.statusCode >= 400) {
+                            reject(new Error(`HTTP Error ${response.statusCode}: The requested page returned an error`));
+                            return;
+                        }
 
-                    switch (encoding) {
-                        case 'br':
-                            output = zlib.createBrotliDecompress();
-                            response.pipe(output);
-                            break;
-                        case 'gzip':
-                            output = zlib.createGunzip();
-                            response.pipe(output);
-                            break;
-                        case 'deflate':
-                            output = zlib.createInflate();
-                            response.pipe(output);
-                            break;
-                        default:
-                            output = response;
-                            break;
-                    }
+                        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                            if (redirectCount >= maxRedirects) {
+                                reject(new Error('Too many redirects'));
+                                return;
+                            }
+                            const nextUrl = new URL(response.headers.location, currentUrl);
+                            makeRequest(nextUrl, redirectCount + 1);
+                            return;
+                        }
 
-                    const chunks = [];
-                    output.on('data', chunk => chunks.push(chunk));
-                    output.on('end', () => {
-                        const result = {
-                            data: Buffer.concat(chunks),
-                            headers: response.headers,
-                            statusCode: response.statusCode
-                        };
-                        
-                        cache.set(url, result);
-                        resolve(result);
+                        const encoding = response.headers['content-encoding'];
+                        let output;
+
+                        switch (encoding) {
+                            case 'br':
+                                output = zlib.createBrotliDecompress();
+                                response.pipe(output);
+                                break;
+                            case 'gzip':
+                                output = zlib.createGunzip();
+                                response.pipe(output);
+                                break;
+                            case 'deflate':
+                                output = zlib.createInflate();
+                                response.pipe(output);
+                                break;
+                            default:
+                                output = response;
+                                break;
+                        }
+
+                        const chunks = [];
+                        output.on('data', chunk => chunks.push(chunk));
+                        output.on('end', () => {
+                            const result = {
+                                data: Buffer.concat(chunks),
+                                headers: response.headers,
+                                statusCode: response.statusCode
+                            };
+                            
+                            cache.set(url, result);
+                            resolve(result);
+                        });
                     });
+
+                    req.on('error', (error) => {
+                        console.error(`Attempt ${attempt + 1} failed:`, error);
+                        reject(new Error('Connection failed: Please check the URL and try again'));
+                    });
+
+                    req.on('timeout', () => {
+                        req.destroy();
+                        reject(new Error('Request timed out: The page took too long to respond'));
+                    });
+
+                    req.end();
                 }
-            });
 
-            req.on('error', reject);
-            req.on('timeout', () => {
-                req.destroy();
-                reject(new Error('Request timeout'));
+                makeRequest(url);
             });
-
-            req.end();
+        } catch (error) {
+            if (attempt === retryCount - 1) throw error;
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
         }
-
-        makeRequest(url);
-    });
+    }
 }
-
 function modifyHtml(html, baseUrl) {
     const proxyScript = `
         <script>
@@ -307,6 +386,7 @@ function modifyHtml(html, baseUrl) {
                     document.head.appendChild(link);
                     preloadLinks.add(url);
                 }
+
                 const originalFetch = window.fetch;
                 window.fetch = async (url, options = {}) => {
                     try {
@@ -325,9 +405,11 @@ function modifyHtml(html, baseUrl) {
                             }
                         });
 
+                        if (!response.ok) throw new Error('Resource fetch failed');
                         resourceCache.set(cacheKey, response.clone());
                         return response;
                     } catch (e) {
+                        console.error('Fetch error:', e);
                         return originalFetch(url, options);
                     }
                 };
@@ -400,7 +482,11 @@ app.get('/proxy', async (req, res) => {
         }
     } catch (error) {
         console.error('Proxy error:', error);
-        res.status(500).send('Resource loading failed');
+        res.status(503).json({
+            error: 'Resource loading failed',
+            details: error.message,
+            retryable: true
+        });
     }
 });
 
@@ -418,7 +504,11 @@ app.post('/proxy', async (req, res) => {
         res.send(modifiedHtml);
     } catch (error) {
         console.error('Proxy error:', error);
-        res.status(500).send('Page loading failed');
+        res.status(503).json({
+            error: 'Page loading failed',
+            details: error.message,
+            retryable: true
+        });
     }
 });
 
@@ -430,4 +520,4 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-// v1.11
+// v1.12
