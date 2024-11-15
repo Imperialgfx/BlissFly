@@ -6,10 +6,11 @@ const zlib = require('zlib');
 const app = express();
 
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.06';
+const VERSION = 'v1.07';
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html');
@@ -153,14 +154,13 @@ app.get('/', (req, res) => {
                 body: JSON.stringify({ url: url })
               });
               
-              const html = await response.text();
-              const modifiedHtml = html.replace(/<a([^>]*)href="([^"]*)"([^>]*)>/g, (match, p1, p2, p3) => {
-                const absoluteUrl = new URL(p2, url).href;
-                return '<a' + p1 + 'href="/proxy?url=' + encodeURIComponent(absoluteUrl) + '"' + p3 + '>';
-              });
+              if (!response.ok) {
+                throw new Error('Network response was not ok');
+              }
               
+              const html = await response.text();
               document.open();
-              document.write(modifiedHtml);
+              document.write(html);
               document.close();
               
               window.onload = () => {
@@ -168,6 +168,7 @@ app.get('/', (req, res) => {
                 clearInterval(loadingInterval);
               };
             } catch (error) {
+              console.error('Error:', error);
               alert('Failed to load the page. Please try again.');
               loading.style.display = 'none';
               clearInterval(loadingInterval);
@@ -179,46 +180,33 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.get('/proxy', async (req, res) => {
-  try {
-    const targetUrl = decodeURIComponent(req.query.url);
-    const html = await fetchWithRedirects(targetUrl);
-    res.send(html);
-  } catch (error) {
-    res.status(500).send('Failed to load the page');
-  }
-});
-
-app.post('/proxy', async (req, res) => {
-  try {
-    const targetUrl = req.body.url.startsWith('http') ? req.body.url : 'https://' + req.body.url;
-    const html = await fetchWithRedirects(targetUrl);
-    res.send(html);
-  } catch (error) {
-    res.status(500).send('Failed to load the requested page');
-  }
-});
-
 async function fetchWithRedirects(url, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https') ? https : http;
+    const options = new URL(url);
     
+    const requestOptions = {
+      hostname: options.hostname,
+      path: options.pathname + options.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      }
+    };
+
     function makeRequest(currentUrl, redirectCount = 0) {
-      protocol.get(currentUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate',
-          'Connection': 'keep-alive'
-        }
-      }, (response) => {
+      const req = protocol.request(currentUrl, requestOptions, (response) => {
         if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           if (redirectCount >= maxRedirects) {
             reject(new Error('Too many redirects'));
             return;
           }
-          const nextUrl = new URL(response.headers.location, currentUrl).href;
+          const nextUrl = new URL(response.headers.location, currentUrl);
           makeRequest(nextUrl, redirectCount + 1);
         } else {
           const encoding = response.headers['content-encoding'];
@@ -238,19 +226,61 @@ async function fetchWithRedirects(url, maxRedirects = 5) {
               break;
           }
 
-          let data = '';
-          output.on('data', chunk => data += chunk);
-          output.on('end', () => resolve(data));
+          const chunks = [];
+          output.on('data', chunk => chunks.push(chunk));
+          output.on('end', () => {
+            const fullData = Buffer.concat(chunks).toString();
+            resolve(fullData);
+          });
         }
-      }).on('error', reject);
+      });
+
+      req.on('error', (error) => {
+        console.error('Request error:', error);
+        reject(error);
+      });
+
+      req.end();
     }
 
     makeRequest(url);
   });
 }
 
+app.get('/proxy', async (req, res) => {
+  try {
+    const targetUrl = decodeURIComponent(req.query.url);
+    const html = await fetchWithRedirects(targetUrl);
+    res.send(html);
+  } catch (error) {
+    console.error('Proxy error:', error);
+    res.status(500).send('Failed to load the page');
+  }
+});
+
+app.post('/proxy', async (req, res) => {
+  try {
+    let targetUrl = req.body.url;
+    if (!targetUrl.startsWith('http')) {
+      targetUrl = 'https://' + targetUrl;
+    }
+    
+    const html = await fetchWithRedirects(targetUrl);
+    
+    const processedHtml = html.replace(
+      /(href|src)="(?!http|\/\/|#)([^"]+)"/g,
+      (match, attr, url) => `${attr}="/proxy?url=${encodeURIComponent(new URL(url, targetUrl).href)}"`
+    );
+    
+    res.send(processedHtml);
+  } catch (error) {
+    console.error('Proxy error:', error);
+    res.status(500).send(`Failed to load the page: ${error.message}`);
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// v1.06
+// v1.07
