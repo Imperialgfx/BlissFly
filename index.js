@@ -3,7 +3,6 @@ const cors = require('cors');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 
-// Render.com environment configuration
 const PORT = process.env.PORT || 10000;
 
 app.use(cors());
@@ -54,11 +53,8 @@ app.get('/', (req, res) => {
           function navigate(event) {
             event.preventDefault();
             const url = document.querySelector('input[name="url"]').value;
-            if (!url.startsWith('http')) {
-              window.location.href = 'https://' + url;
-            } else {
-              window.location.href = url;
-            }
+            const encodedUrl = btoa(url).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
+            window.location.href = '/proxy/' + encodedUrl;
           }
         </script>
       </head>
@@ -72,28 +68,41 @@ app.get('/', (req, res) => {
   `);
 });
 
-const proxy = createProxyMiddleware({
-  target: 'http://example.com',
-  changeOrigin: true,
-  secure: false,
-  ws: true,
-  followRedirects: true,
-  proxyTimeout: 30000,
-  onProxyRes: (proxyRes, req, res) => {
-    proxyRes.headers['x-content-type-options'] = 'nosniff';
-  },
-  router: req => {
-    const path = req.originalUrl;
-    if (path === '/') return 'http://example.com';
-    try {
-      return new URL(path.slice(1)).toString();
-    } catch {
-      return 'http://example.com';
-    }
-  }
-});
+function decodeURL(encoded) {
+  encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  while (encoded.length % 4) encoded += '=';
+  return Buffer.from(encoded, 'base64').toString('ascii');
+}
 
-app.use('*', proxy);
+app.use('/proxy/:url', (req, res, next) => {
+  const targetUrl = decodeURL(req.params.url);
+  const finalUrl = targetUrl.startsWith('http') ? targetUrl : 'https://' + targetUrl;
+
+  const proxyConfig = {
+    target: finalUrl,
+    changeOrigin: true,
+    secure: false,
+    ws: true,
+    followRedirects: true,
+    proxyTimeout: 30000,
+    pathRewrite: {
+      [`^/proxy/${req.params.url}`]: '',
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      proxyRes.headers['x-content-type-options'] = 'nosniff';
+      Object.keys(proxyRes.headers).forEach(key => {
+        if (key === 'location') {
+          const location = proxyRes.headers[key];
+          const encodedLocation = Buffer.from(location).toString('base64')
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+          proxyRes.headers[key] = `/proxy/${encodedLocation}`;
+        }
+      });
+    }
+  };
+
+  createProxyMiddleware(proxyConfig)(req, res, next);
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
