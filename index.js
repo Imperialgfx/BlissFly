@@ -1,10 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const https = require('https');
+const http = require('http');
 const app = express();
 
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.03';
+const VERSION = 'v1.04';
 
 app.use(cors());
 app.use(express.json());
@@ -20,10 +21,12 @@ app.get('/', (req, res) => {
         <style>
           body { 
             font-family: Arial, sans-serif; 
-            padding: 20px;
+            margin: 0;
+            padding: 0;
             background: #f5f5f5;
-            position: relative;
-            min-height: 100vh;
+          }
+          #content {
+            padding: 20px;
           }
           form { 
             margin: 20px auto;
@@ -60,8 +63,16 @@ app.get('/', (req, res) => {
           }
           #loading {
             display: none;
-            text-align: center;
-            margin-top: 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
           }
           .loader {
             display: inline-grid;
@@ -105,15 +116,17 @@ app.get('/', (req, res) => {
         </style>
       </head>
       <body>
-        <form id="proxyForm">
-          <input type="text" name="url" placeholder="Enter website URL">
-          <button type="submit">Browse</button>
-        </form>
+        <div id="content">
+          <form id="proxyForm">
+            <input type="text" name="url" placeholder="Enter website URL">
+            <button type="submit">Browse</button>
+          </form>
+          <div class="version">${VERSION}</div>
+        </div>
         <div id="loading">
           <div class="loader"></div>
           <div id="loadingText">Loading...</div>
         </div>
-        <div class="version">${VERSION}</div>
         <script>
           let dots = 0;
           function updateLoadingText() {
@@ -126,7 +139,7 @@ app.get('/', (req, res) => {
             e.preventDefault();
             const url = document.querySelector('input[name="url"]').value;
             const loading = document.getElementById('loading');
-            loading.style.display = 'block';
+            loading.style.display = 'flex';
             
             const loadingInterval = setInterval(updateLoadingText, 500);
 
@@ -154,29 +167,39 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/proxy', async (req, res) => {
-  try {
-    const targetUrl = req.body.url.startsWith('http') ? req.body.url : 'https://' + req.body.url;
+function followRedirects(url, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
     
-    const fetchData = new Promise((resolve, reject) => {
-      https.get(targetUrl, {
+    function makeRequest(currentUrl, redirectCount = 0) {
+      protocol.get(currentUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
       }, (response) => {
-        let data = '';
-        response.on('data', (chunk) => {
-          data += chunk;
-        });
-        response.on('end', () => {
-          resolve(data);
-        });
-      }).on('error', (err) => {
-        reject(err);
-      });
-    });
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          if (redirectCount >= maxRedirects) {
+            reject(new Error('Too many redirects'));
+            return;
+          }
+          const nextUrl = new URL(response.headers.location, currentUrl).href;
+          makeRequest(nextUrl, redirectCount + 1);
+        } else {
+          let data = '';
+          response.on('data', (chunk) => data += chunk);
+          response.on('end', () => resolve(data));
+        }
+      }).on('error', reject);
+    }
 
-    const html = await fetchData;
+    makeRequest(url);
+  });
+}
+
+app.post('/proxy', async (req, res) => {
+  try {
+    const targetUrl = req.body.url.startsWith('http') ? req.body.url : 'https://' + req.body.url;
+    const html = await followRedirects(targetUrl);
     res.send(html);
   } catch (error) {
     res.status(500).send('Failed to load the requested page');
@@ -187,4 +210,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// v1.03
+// v1.04
