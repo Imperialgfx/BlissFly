@@ -3,15 +3,65 @@ const cors = require('cors');
 const https = require('https');
 const http = require('http');
 const zlib = require('zlib');
-const app = express();
 
+class CacheManager {
+    constructor(maxSize = 100) {
+        this.cache = new Map();
+        this.maxSize = maxSize;
+    }
+
+    set(key, value, ttl = 300000) {
+        if (this.cache.size >= this.maxSize) {
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
+        }
+        
+        this.cache.set(key, {
+            value,
+            expiry: Date.now() + ttl
+        });
+    }
+
+    get(key) {
+        const item = this.cache.get(key);
+        if (!item) return null;
+        
+        if (Date.now() > item.expiry) {
+            this.cache.delete(key);
+            return null;
+        }
+        
+        return item.value;
+    }
+
+    prune() {
+        const now = Date.now();
+        for (const [key, item] of this.cache.entries()) {
+            if (now > item.expiry) {
+                this.cache.delete(key);
+            }
+        }
+    }
+}
+
+const app = express();
+const cache = new CacheManager(100);
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.09';
+const VERSION = 'v1.11';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Add performance headers
+app.use((req, res, next) => {
+    res.set({
+        'X-DNS-Prefetch-Control': 'on',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'public, max-age=300'
+    });
+    next();
+});
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.send(`
@@ -52,6 +102,7 @@ app.get('/', (req, res) => {
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            transition: background 0.2s;
           }
           button:hover {
             background: #0056b3;
@@ -70,57 +121,34 @@ app.get('/', (req, res) => {
             left: 0;
             width: 100%;
             height: 100%;
-            background: white;
+            background: rgba(255, 255, 255, 0.95);
             z-index: 1000;
             justify-content: center;
             align-items: center;
             flex-direction: column;
           }
           .loader {
-            display: inline-grid;
-            width: 30px;
-            aspect-ratio: 1;
-            background: #574951;
-            animation: 
-              l12-0 4s steps(4) infinite,
-              l12-1 6s linear infinite;
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #007bff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
           }
-          .loader:before,
-          .loader:after {
-            content: "";
-            grid-area: 1/1;
-            background: #83988E;
-            clip-path: polygon(100% 50%,65.45% 97.55%,9.55% 79.39%,9.55% 20.61%,65.45% 2.45%);
-            transform-origin: right;
-            translate: -100% 50%;
-            scale: 1.7;
-            animation: l12-2 1s linear infinite;
-          }
-          .loader:after {
-            clip-path: polygon(90.45% 79.39%,34.55% 97.55%,0% 50%,34.55% 2.45%,90.45% 20.61%);
-            transform-origin: left;
-            translate: 100% -50%;
-          }
-          @keyframes l12-0 {
-            to{rotate: 1turn}
-          }
-          @keyframes l12-1 {
-            to{transform: rotate(1turn)}
-          }
-          @keyframes l12-2 {
-            0%{rotate: 36deg}
-            to{rotate: -126deg}
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
           }
           #loadingText {
             margin-top: 10px;
-            color: #574951;
+            color: #333;
           }
         </style>
       </head>
       <body>
         <div id="content">
           <form id="proxyForm">
-            <input type="text" name="url" placeholder="Enter website URL">
+            <input type="text" name="url" placeholder="Enter website URL" autocomplete="off">
             <button type="submit">Browse</button>
           </form>
           <div class="version">${VERSION}</div>
@@ -131,6 +159,8 @@ app.get('/', (req, res) => {
         </div>
         <script>
           let dots = 0;
+          let loadingInterval;
+
           function updateLoadingText() {
             const text = 'Loading' + '.'.repeat(dots + 1);
             document.getElementById('loadingText').textContent = text;
@@ -143,7 +173,7 @@ app.get('/', (req, res) => {
             const loading = document.getElementById('loading');
             loading.style.display = 'flex';
             
-            const loadingInterval = setInterval(updateLoadingText, 500);
+            loadingInterval = setInterval(updateLoadingText, 500);
 
             try {
               const response = await fetch('/proxy', {
@@ -154,9 +184,7 @@ app.get('/', (req, res) => {
                 body: JSON.stringify({ url: url })
               });
               
-              if (!response.ok) {
-                throw new Error('Network response was not ok');
-              }
+              if (!response.ok) throw new Error('Network response was not ok');
               
               const html = await response.text();
               document.open();
@@ -164,17 +192,15 @@ app.get('/', (req, res) => {
               document.close();
               
               window.addEventListener('load', function() {
+                if (loadingInterval) clearInterval(loadingInterval);
                 const loadingElement = document.getElementById('loading');
-                if (loadingElement) {
-                  loadingElement.style.display = 'none';
-                }
-                clearInterval(loadingInterval);
+                if (loadingElement) loadingElement.style.display = 'none';
               });
             } catch (error) {
               console.error('Error:', error);
               alert('Failed to load the page. Please try again.');
               loading.style.display = 'none';
-              clearInterval(loadingInterval);
+              if (loadingInterval) clearInterval(loadingInterval);
             }
           });
         </script>
@@ -182,75 +208,10 @@ app.get('/', (req, res) => {
     </html>
   `);
 });
-function modifyHtml(html, baseUrl) {
-    const proxyScript = `
-        <script>
-            (function() {
-                // Intercept fetch requests
-                const originalFetch = window.fetch;
-                window.fetch = async (url, options = {}) => {
-                    try {
-                        const absoluteUrl = new URL(url, window.location.href).href;
-                        return originalFetch('/proxy?url=' + encodeURIComponent(absoluteUrl), {
-                            ...options,
-                            headers: {
-                                ...options.headers,
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        });
-                    } catch (e) {
-                        return originalFetch(url, options);
-                    }
-                };
-
-                // Intercept XHR requests
-                const XHR = XMLHttpRequest.prototype;
-                const originalOpen = XHR.open;
-                XHR.open = function(method, url, ...rest) {
-                    try {
-                        const absoluteUrl = new URL(url, window.location.href).href;
-                        return originalOpen.call(this, method, '/proxy?url=' + encodeURIComponent(absoluteUrl), ...rest);
-                    } catch (e) {
-                        return originalOpen.call(this, method, url, ...rest);
-                    }
-                };
-
-                // Override window.location methods
-                const originalAssign = window.location.assign;
-                window.location.assign = (url) => {
-                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
-                };
-
-                const originalReplace = window.location.replace;
-                window.location.replace = (url) => {
-                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
-                };
-            })();
-        </script>
-    `;
-
-    return html
-        .replace(/<head>/i, `<head><base href="${baseUrl}">`)
-        .replace(/<\/head>/i, `${proxyScript}</head>`)
-        .replace(/(href|src|action)=["']((?!data:|javascript:|#|mailto:|tel:).+?)["']/gi, (match, attr, url) => {
-            try {
-                const absoluteUrl = new URL(url, baseUrl).href;
-                return `${attr}="/proxy?url=${encodeURIComponent(absoluteUrl)}"`;
-            } catch (e) {
-                return match;
-            }
-        })
-        .replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
-            try {
-                const absoluteUrl = new URL(url, baseUrl).href;
-                return `url('/proxy?url=${encodeURIComponent(absoluteUrl)}')`;
-            } catch (e) {
-                return match;
-            }
-        });
-}
-
 async function fetchWithRedirects(url, maxRedirects = 5) {
+    const cachedResponse = cache.get(url);
+    if (cachedResponse) return cachedResponse;
+
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
         const options = new URL(url);
@@ -268,7 +229,8 @@ async function fetchWithRedirects(url, maxRedirects = 5) {
                 'Cache-Control': 'no-cache',
                 'Pragma': 'no-cache',
                 'Host': options.hostname
-            }
+            },
+            timeout: 5000
         };
 
         function makeRequest(currentUrl, redirectCount = 0) {
@@ -305,21 +267,115 @@ async function fetchWithRedirects(url, maxRedirects = 5) {
                     const chunks = [];
                     output.on('data', chunk => chunks.push(chunk));
                     output.on('end', () => {
-                        resolve({
+                        const result = {
                             data: Buffer.concat(chunks),
                             headers: response.headers,
                             statusCode: response.statusCode
-                        });
+                        };
+                        
+                        cache.set(url, result);
+                        resolve(result);
                     });
                 }
             });
 
             req.on('error', reject);
+            req.on('timeout', () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
+
             req.end();
         }
 
         makeRequest(url);
     });
+}
+
+function modifyHtml(html, baseUrl) {
+    const proxyScript = `
+        <script>
+            (function() {
+                const resourceCache = new Map();
+                const preloadLinks = new Set();
+
+                function prefetchResource(url) {
+                    if (preloadLinks.has(url)) return;
+                    const link = document.createElement('link');
+                    link.rel = 'prefetch';
+                    link.href = url;
+                    document.head.appendChild(link);
+                    preloadLinks.add(url);
+                }
+                const originalFetch = window.fetch;
+                window.fetch = async (url, options = {}) => {
+                    try {
+                        const absoluteUrl = new URL(url, window.location.href).href;
+                        const cacheKey = absoluteUrl + JSON.stringify(options);
+                        
+                        if (resourceCache.has(cacheKey)) {
+                            return resourceCache.get(cacheKey).clone();
+                        }
+
+                        const response = await originalFetch('/proxy?url=' + encodeURIComponent(absoluteUrl), {
+                            ...options,
+                            headers: {
+                                ...options.headers,
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+
+                        resourceCache.set(cacheKey, response.clone());
+                        return response;
+                    } catch (e) {
+                        return originalFetch(url, options);
+                    }
+                };
+
+                const XHR = XMLHttpRequest.prototype;
+                const originalOpen = XHR.open;
+                XHR.open = function(method, url, ...rest) {
+                    try {
+                        const absoluteUrl = new URL(url, window.location.href).href;
+                        prefetchResource('/proxy?url=' + encodeURIComponent(absoluteUrl));
+                        return originalOpen.call(this, method, '/proxy?url=' + encodeURIComponent(absoluteUrl), ...rest);
+                    } catch (e) {
+                        return originalOpen.call(this, method, url, ...rest);
+                    }
+                };
+
+                window.location.assign = (url) => {
+                    prefetchResource('/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href));
+                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
+                };
+
+                window.location.replace = (url) => {
+                    prefetchResource('/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href));
+                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
+                };
+            })();
+        </script>
+    `;
+
+    return html
+        .replace(/<head>/i, `<head><base href="${baseUrl}">`)
+        .replace(/<\/head>/i, `${proxyScript}</head>`)
+        .replace(/(href|src|action)=["']((?!data:|javascript:|#|mailto:|tel:).+?)["']/gi, (match, attr, url) => {
+            try {
+                const absoluteUrl = new URL(url, baseUrl).href;
+                return `${attr}="/proxy?url=${encodeURIComponent(absoluteUrl)}"`;
+            } catch (e) {
+                return match;
+            }
+        })
+        .replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
+            try {
+                const absoluteUrl = new URL(url, baseUrl).href;
+                return `url('/proxy?url=${encodeURIComponent(absoluteUrl)}')`;
+            } catch (e) {
+                return match;
+            }
+        });
 }
 
 app.get('/proxy', async (req, res) => {
@@ -328,7 +384,7 @@ app.get('/proxy', async (req, res) => {
         const response = await fetchWithRedirects(targetUrl);
         
         Object.entries(response.headers).forEach(([key, value]) => {
-            if (key !== 'content-encoding' && key !== 'content-length') {
+            if (!['content-encoding', 'content-length', 'transfer-encoding'].includes(key)) {
                 res.set(key, value);
             }
         });
@@ -366,8 +422,12 @@ app.post('/proxy', async (req, res) => {
     }
 });
 
+setInterval(() => {
+    cache.prune();
+}, 300000);
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-// v1.09
+// v1.11
