@@ -6,7 +6,7 @@ const zlib = require('zlib');
 const app = express();
 
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.07';
+const VERSION = 'v1.08';
 
 app.use(cors());
 app.use(express.json());
@@ -163,10 +163,14 @@ app.get('/', (req, res) => {
               document.write(html);
               document.close();
               
-              window.onload = () => {
-                loading.style.display = 'none';
+              // Ensure loading animation stays until everything is loaded
+              window.addEventListener('load', function() {
+                const loadingElement = document.getElementById('loading');
+                if (loadingElement) {
+                  loadingElement.style.display = 'none';
+                }
                 clearInterval(loadingInterval);
-              };
+              });
             } catch (error) {
               console.error('Error:', error);
               alert('Failed to load the page. Please try again.');
@@ -180,6 +184,27 @@ app.get('/', (req, res) => {
   `);
 });
 
+function rewriteUrls(html, baseUrl) {
+  return html
+    .replace(/(href|src|action)="(.*?)"/g, (match, attr, url) => {
+      if (url.startsWith('http') || url.startsWith('//') || url.startsWith('#')) {
+        return `${attr}="/proxy?url=${encodeURIComponent(url)}"`;
+      }
+      const absoluteUrl = new URL(url, baseUrl).href;
+      return `${attr}="/proxy?url=${encodeURIComponent(absoluteUrl)}"`;
+    })
+    .replace(/url\(['"]?(.*?)['"]?\)/g, (match, url) => {
+      if (url.startsWith('http') || url.startsWith('//') || url.startsWith('data:')) {
+        return `url(/proxy?url=${encodeURIComponent(url)})`;
+      }
+      const absoluteUrl = new URL(url, baseUrl).href;
+      return `url(/proxy?url=${encodeURIComponent(absoluteUrl)})`;
+    })
+    .replace(/<head>/i, `<head><base href="${baseUrl}">`)
+    .replace(/window\.location/g, 'window.proxyLocation')
+    .replace(/document\.location/g, 'document.proxyLocation');
+}
+
 async function fetchWithRedirects(url, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https') ? https : http;
@@ -191,11 +216,12 @@ async function fetchWithRedirects(url, maxRedirects = 5) {
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept': '*/*',
         'Accept-Language': 'en-US,en;q=0.5',
         'Accept-Encoding': 'gzip, deflate',
         'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
+        'Pragma': 'no-cache',
+        'Host': options.hostname
       }
     };
 
@@ -229,8 +255,12 @@ async function fetchWithRedirects(url, maxRedirects = 5) {
           const chunks = [];
           output.on('data', chunk => chunks.push(chunk));
           output.on('end', () => {
-            const fullData = Buffer.concat(chunks).toString();
-            resolve(fullData);
+            const contentType = response.headers['content-type'] || '';
+            const data = Buffer.concat(chunks);
+            resolve({
+              data: data,
+              contentType: contentType
+            });
           });
         }
       });
@@ -250,11 +280,20 @@ async function fetchWithRedirects(url, maxRedirects = 5) {
 app.get('/proxy', async (req, res) => {
   try {
     const targetUrl = decodeURIComponent(req.query.url);
-    const html = await fetchWithRedirects(targetUrl);
-    res.send(html);
+    const response = await fetchWithRedirects(targetUrl);
+    
+    res.set('Content-Type', response.contentType);
+    
+    if (response.contentType.includes('html')) {
+      const html = response.data.toString();
+      const processedHtml = rewriteUrls(html, targetUrl);
+      res.send(processedHtml);
+    } else {
+      res.send(response.data);
+    }
   } catch (error) {
     console.error('Proxy error:', error);
-    res.status(500).send('Failed to load the page');
+    res.status(500).send('Failed to load the resource');
   }
 });
 
@@ -265,12 +304,9 @@ app.post('/proxy', async (req, res) => {
       targetUrl = 'https://' + targetUrl;
     }
     
-    const html = await fetchWithRedirects(targetUrl);
-    
-    const processedHtml = html.replace(
-      /(href|src)="(?!http|\/\/|#)([^"]+)"/g,
-      (match, attr, url) => `${attr}="/proxy?url=${encodeURIComponent(new URL(url, targetUrl).href)}"`
-    );
+    const response = await fetchWithRedirects(targetUrl);
+    const html = response.data.toString();
+    const processedHtml = rewriteUrls(html, targetUrl);
     
     res.send(processedHtml);
   } catch (error) {
@@ -283,4 +319,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// v1.07
+// v1.08
