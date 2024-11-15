@@ -271,47 +271,56 @@ app.get('/', (req, res) => {
     </html>
   `);
 });
-async function fetchWithRedirects(url, maxRedirects = 5, retryCount = 3) {
+async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
     const cachedResponse = cache.get(url);
     if (cachedResponse) return cachedResponse;
+
+    // Track visited URLs to detect circular redirects
+    const visitedUrls = new Set();
 
     for (let attempt = 0; attempt < retryCount; attempt++) {
         try {
             return await new Promise((resolve, reject) => {
                 const protocol = url.startsWith('https') ? https : http;
                 const options = new URL(url);
-                
-                const requestOptions = {
-                    hostname: options.hostname,
-                    path: options.pathname + options.search,
-                    method: 'GET',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124',
-                        'Accept': '*/*',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Accept-Encoding': 'gzip, deflate, br',
-                        'Connection': 'keep-alive',
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache',
-                        'Host': options.hostname
-                    },
-                    timeout: 10000
-                };
 
                 function makeRequest(currentUrl, redirectCount = 0) {
-                    const req = protocol.request(currentUrl, requestOptions, (response) => {
-                        if (response.statusCode >= 400) {
-                            reject(new Error(`HTTP Error ${response.statusCode}: The requested page returned an error`));
-                            return;
-                        }
+                    // Check for circular redirects
+                    if (visitedUrls.has(currentUrl.href)) {
+                        reject(new Error('Circular redirect detected'));
+                        return;
+                    }
+                    visitedUrls.add(currentUrl.href);
 
+                    const requestOptions = {
+                        hostname: currentUrl.hostname,
+                        path: currentUrl.pathname + currentUrl.search,
+                        method: 'GET',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124',
+                            'Accept': '*/*',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'Accept-Encoding': 'gzip, deflate, br',
+                            'Connection': 'keep-alive',
+                            'Cache-Control': 'no-cache',
+                            'Host': currentUrl.hostname
+                        },
+                        timeout: 15000
+                    };
+
+                    const req = protocol.request(requestOptions, (response) => {
                         if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
                             if (redirectCount >= maxRedirects) {
-                                reject(new Error('Too many redirects'));
+                                reject(new Error(`Maximum redirects (${maxRedirects}) exceeded`));
                                 return;
                             }
-                            const nextUrl = new URL(response.headers.location, currentUrl);
-                            makeRequest(nextUrl, redirectCount + 1);
+                            
+                            try {
+                                const nextUrl = new URL(response.headers.location, currentUrl);
+                                makeRequest(nextUrl, redirectCount + 1);
+                            } catch (e) {
+                                reject(new Error('Invalid redirect URL'));
+                            }
                             return;
                         }
 
@@ -352,18 +361,18 @@ async function fetchWithRedirects(url, maxRedirects = 5, retryCount = 3) {
 
                     req.on('error', (error) => {
                         console.error(`Attempt ${attempt + 1} failed:`, error);
-                        reject(new Error('Connection failed: Please check the URL and try again'));
+                        reject(new Error('Connection failed: The server is not responding'));
                     });
 
                     req.on('timeout', () => {
                         req.destroy();
-                        reject(new Error('Request timed out: The page took too long to respond'));
+                        reject(new Error('Request timed out: The server took too long to respond'));
                     });
 
                     req.end();
                 }
 
-                makeRequest(url);
+                makeRequest(new URL(url));
             });
         } catch (error) {
             if (attempt === retryCount - 1) throw error;
