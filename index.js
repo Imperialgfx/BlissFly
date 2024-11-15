@@ -1,10 +1,10 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
+const https = require('https');
 const app = express();
 
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.02';
+const VERSION = 'v1.03';
 
 app.use(cors());
 app.use(express.json());
@@ -157,12 +157,27 @@ app.get('/', (req, res) => {
 app.post('/proxy', async (req, res) => {
   try {
     const targetUrl = req.body.url.startsWith('http') ? req.body.url : 'https://' + req.body.url;
-    const response = await axios.get(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
+    
+    const fetchData = new Promise((resolve, reject) => {
+      https.get(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      }, (response) => {
+        let data = '';
+        response.on('data', (chunk) => {
+          data += chunk;
+        });
+        response.on('end', () => {
+          resolve(data);
+        });
+      }).on('error', (err) => {
+        reject(err);
+      });
     });
-    res.send(response.data);
+
+    const html = await fetchData;
+    res.send(html);
   } catch (error) {
     res.status(500).send('Failed to load the requested page');
   }
@@ -172,4 +187,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// v1.02
+// v1.03
