@@ -6,11 +6,11 @@ const zlib = require('zlib');
 const app = express();
 
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.08';
+const VERSION = 'v1.09';
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html');
@@ -163,7 +163,6 @@ app.get('/', (req, res) => {
               document.write(html);
               document.close();
               
-              // Ensure loading animation stays until everything is loaded
               window.addEventListener('load', function() {
                 const loadingElement = document.getElementById('loading');
                 if (loadingElement) {
@@ -183,140 +182,192 @@ app.get('/', (req, res) => {
     </html>
   `);
 });
+function modifyHtml(html, baseUrl) {
+    const proxyScript = `
+        <script>
+            (function() {
+                // Intercept fetch requests
+                const originalFetch = window.fetch;
+                window.fetch = async (url, options = {}) => {
+                    try {
+                        const absoluteUrl = new URL(url, window.location.href).href;
+                        return originalFetch('/proxy?url=' + encodeURIComponent(absoluteUrl), {
+                            ...options,
+                            headers: {
+                                ...options.headers,
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+                    } catch (e) {
+                        return originalFetch(url, options);
+                    }
+                };
 
-function rewriteUrls(html, baseUrl) {
-  return html
-    .replace(/(href|src|action)="(.*?)"/g, (match, attr, url) => {
-      if (url.startsWith('http') || url.startsWith('//') || url.startsWith('#')) {
-        return `${attr}="/proxy?url=${encodeURIComponent(url)}"`;
-      }
-      const absoluteUrl = new URL(url, baseUrl).href;
-      return `${attr}="/proxy?url=${encodeURIComponent(absoluteUrl)}"`;
-    })
-    .replace(/url\(['"]?(.*?)['"]?\)/g, (match, url) => {
-      if (url.startsWith('http') || url.startsWith('//') || url.startsWith('data:')) {
-        return `url(/proxy?url=${encodeURIComponent(url)})`;
-      }
-      const absoluteUrl = new URL(url, baseUrl).href;
-      return `url(/proxy?url=${encodeURIComponent(absoluteUrl)})`;
-    })
-    .replace(/<head>/i, `<head><base href="${baseUrl}">`)
-    .replace(/window\.location/g, 'window.proxyLocation')
-    .replace(/document\.location/g, 'document.proxyLocation');
+                // Intercept XHR requests
+                const XHR = XMLHttpRequest.prototype;
+                const originalOpen = XHR.open;
+                XHR.open = function(method, url, ...rest) {
+                    try {
+                        const absoluteUrl = new URL(url, window.location.href).href;
+                        return originalOpen.call(this, method, '/proxy?url=' + encodeURIComponent(absoluteUrl), ...rest);
+                    } catch (e) {
+                        return originalOpen.call(this, method, url, ...rest);
+                    }
+                };
+
+                // Override window.location methods
+                const originalAssign = window.location.assign;
+                window.location.assign = (url) => {
+                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
+                };
+
+                const originalReplace = window.location.replace;
+                window.location.replace = (url) => {
+                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
+                };
+            })();
+        </script>
+    `;
+
+    return html
+        .replace(/<head>/i, `<head><base href="${baseUrl}">`)
+        .replace(/<\/head>/i, `${proxyScript}</head>`)
+        .replace(/(href|src|action)=["']((?!data:|javascript:|#|mailto:|tel:).+?)["']/gi, (match, attr, url) => {
+            try {
+                const absoluteUrl = new URL(url, baseUrl).href;
+                return `${attr}="/proxy?url=${encodeURIComponent(absoluteUrl)}"`;
+            } catch (e) {
+                return match;
+            }
+        })
+        .replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
+            try {
+                const absoluteUrl = new URL(url, baseUrl).href;
+                return `url('/proxy?url=${encodeURIComponent(absoluteUrl)}')`;
+            } catch (e) {
+                return match;
+            }
+        });
 }
 
 async function fetchWithRedirects(url, maxRedirects = 5) {
-  return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https') ? https : http;
-    const options = new URL(url);
-    
-    const requestOptions = {
-      hostname: options.hostname,
-      path: options.pathname + options.search,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Host': options.hostname
-      }
-    };
+    return new Promise((resolve, reject) => {
+        const protocol = url.startsWith('https') ? https : http;
+        const options = new URL(url);
+        
+        const requestOptions = {
+            hostname: options.hostname,
+            path: options.pathname + options.search,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Host': options.hostname
+            }
+        };
 
-    function makeRequest(currentUrl, redirectCount = 0) {
-      const req = protocol.request(currentUrl, requestOptions, (response) => {
-        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-          if (redirectCount >= maxRedirects) {
-            reject(new Error('Too many redirects'));
-            return;
-          }
-          const nextUrl = new URL(response.headers.location, currentUrl);
-          makeRequest(nextUrl, redirectCount + 1);
-        } else {
-          const encoding = response.headers['content-encoding'];
-          let output;
+        function makeRequest(currentUrl, redirectCount = 0) {
+            const req = protocol.request(currentUrl, requestOptions, (response) => {
+                if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                    if (redirectCount >= maxRedirects) {
+                        reject(new Error('Too many redirects'));
+                        return;
+                    }
+                    const nextUrl = new URL(response.headers.location, currentUrl);
+                    makeRequest(nextUrl, redirectCount + 1);
+                } else {
+                    const encoding = response.headers['content-encoding'];
+                    let output;
 
-          switch (encoding) {
-            case 'gzip':
-              output = zlib.createGunzip();
-              response.pipe(output);
-              break;
-            case 'deflate':
-              output = zlib.createInflate();
-              response.pipe(output);
-              break;
-            default:
-              output = response;
-              break;
-          }
+                    switch (encoding) {
+                        case 'br':
+                            output = zlib.createBrotliDecompress();
+                            response.pipe(output);
+                            break;
+                        case 'gzip':
+                            output = zlib.createGunzip();
+                            response.pipe(output);
+                            break;
+                        case 'deflate':
+                            output = zlib.createInflate();
+                            response.pipe(output);
+                            break;
+                        default:
+                            output = response;
+                            break;
+                    }
 
-          const chunks = [];
-          output.on('data', chunk => chunks.push(chunk));
-          output.on('end', () => {
-            const contentType = response.headers['content-type'] || '';
-            const data = Buffer.concat(chunks);
-            resolve({
-              data: data,
-              contentType: contentType
+                    const chunks = [];
+                    output.on('data', chunk => chunks.push(chunk));
+                    output.on('end', () => {
+                        resolve({
+                            data: Buffer.concat(chunks),
+                            headers: response.headers,
+                            statusCode: response.statusCode
+                        });
+                    });
+                }
             });
-          });
+
+            req.on('error', reject);
+            req.end();
         }
-      });
 
-      req.on('error', (error) => {
-        console.error('Request error:', error);
-        reject(error);
-      });
-
-      req.end();
-    }
-
-    makeRequest(url);
-  });
+        makeRequest(url);
+    });
 }
 
 app.get('/proxy', async (req, res) => {
-  try {
-    const targetUrl = decodeURIComponent(req.query.url);
-    const response = await fetchWithRedirects(targetUrl);
-    
-    res.set('Content-Type', response.contentType);
-    
-    if (response.contentType.includes('html')) {
-      const html = response.data.toString();
-      const processedHtml = rewriteUrls(html, targetUrl);
-      res.send(processedHtml);
-    } else {
-      res.send(response.data);
+    try {
+        const targetUrl = decodeURIComponent(req.query.url);
+        const response = await fetchWithRedirects(targetUrl);
+        
+        Object.entries(response.headers).forEach(([key, value]) => {
+            if (key !== 'content-encoding' && key !== 'content-length') {
+                res.set(key, value);
+            }
+        });
+
+        const contentType = response.headers['content-type'] || '';
+        
+        if (contentType.includes('html')) {
+            const html = response.data.toString();
+            const modifiedHtml = modifyHtml(html, targetUrl);
+            res.send(modifiedHtml);
+        } else {
+            res.send(response.data);
+        }
+    } catch (error) {
+        console.error('Proxy error:', error);
+        res.status(500).send('Resource loading failed');
     }
-  } catch (error) {
-    console.error('Proxy error:', error);
-    res.status(500).send('Failed to load the resource');
-  }
 });
 
 app.post('/proxy', async (req, res) => {
-  try {
-    let targetUrl = req.body.url;
-    if (!targetUrl.startsWith('http')) {
-      targetUrl = 'https://' + targetUrl;
+    try {
+        let targetUrl = req.body.url;
+        if (!targetUrl.startsWith('http')) {
+            targetUrl = 'https://' + targetUrl;
+        }
+        
+        const response = await fetchWithRedirects(targetUrl);
+        const html = response.data.toString();
+        const modifiedHtml = modifyHtml(html, targetUrl);
+        
+        res.send(modifiedHtml);
+    } catch (error) {
+        console.error('Proxy error:', error);
+        res.status(500).send('Page loading failed');
     }
-    
-    const response = await fetchWithRedirects(targetUrl);
-    const html = response.data.toString();
-    const processedHtml = rewriteUrls(html, targetUrl);
-    
-    res.send(processedHtml);
-  } catch (error) {
-    console.error('Proxy error:', error);
-    res.status(500).send(`Failed to load the page: ${error.message}`);
-  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
 
-// v1.08
+// v1.09
