@@ -4,6 +4,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 
 const PORT = process.env.PORT || 10000;
+const VERSION = 'v1.01';
 
 app.use(cors());
 app.use(express.json());
@@ -21,6 +22,8 @@ app.get('/', (req, res) => {
             font-family: Arial, sans-serif; 
             padding: 20px;
             background: #f5f5f5;
+            position: relative;
+            min-height: 100vh;
           }
           form { 
             margin: 20px auto;
@@ -48,6 +51,13 @@ app.get('/', (req, res) => {
           button:hover {
             background: #0056b3;
           }
+          .version {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            font-size: 12px;
+            color: #666;
+          }
         </style>
       </head>
       <body>
@@ -55,6 +65,7 @@ app.get('/', (req, res) => {
           <input type="text" name="url" placeholder="Enter website URL">
           <button type="submit">Browse</button>
         </form>
+        <div class="version">${VERSION}</div>
         <script>
           document.getElementById('proxyForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -105,4 +116,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// v1
+// v1.01
