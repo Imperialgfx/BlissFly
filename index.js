@@ -47,7 +47,7 @@ class CacheManager {
 const app = express();
 const cache = new CacheManager(100);
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.13';
+const VERSION = 'v1.14';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -57,7 +57,10 @@ app.use((req, res, next) => {
     res.set({
         'X-DNS-Prefetch-Control': 'on',
         'X-Content-Type-Options': 'nosniff',
-        'Cache-Control': 'public, max-age=300'
+        'Cache-Control': 'public, max-age=300',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
     });
     next();
 });
@@ -223,7 +226,7 @@ app.get('/', (req, res) => {
             }
           }
 
-          async function loadUrl(url) {
+          async function loadUrl(url, pushState = true) {
             const loading = document.getElementById('loading');
             loading.style.display = 'flex';
             lastRequestUrl = url;
@@ -231,7 +234,7 @@ app.get('/', (req, res) => {
             loadingInterval = setInterval(updateLoadingText, 500);
 
             try {
-              const response = await fetch('/proxy', {
+              const response = await fetch('/watch', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -245,6 +248,9 @@ app.get('/', (req, res) => {
               }
               
               const html = await response.text();
+              if (pushState) {
+                history.pushState({ url: url }, '', '/watch?url=' + encodeURIComponent(url));
+              }
               document.open();
               document.write(html);
               document.close();
@@ -265,6 +271,12 @@ app.get('/', (req, res) => {
             e.preventDefault();
             const url = document.querySelector('input[name="url"]').value;
             loadUrl(url);
+          });
+
+          window.addEventListener('popstate', function(e) {
+            if (e.state && e.state.url) {
+              loadUrl(e.state.url, false);
+            }
           });
         </script>
       </body>
@@ -297,12 +309,16 @@ async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
                         method: 'GET',
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124',
-                            'Accept': '*/*',
+                            'Accept': 'image/*, text/*, application/*, */*',
                             'Accept-Language': 'en-US,en;q=0.9',
                             'Accept-Encoding': 'gzip, deflate, br',
                             'Connection': 'keep-alive',
                             'Cache-Control': 'no-cache',
-                            'Host': currentUrl.hostname
+                            'Pragma': 'no-cache',
+                            'Host': currentUrl.hostname,
+                            'Sec-Fetch-Mode': 'cors',
+                            'Sec-Fetch-Site': 'cross-site',
+                            'Referer': currentUrl.origin
                         },
                         timeout: 15000
                     };
@@ -404,6 +420,30 @@ function modifyHtml(html, baseUrl) {
                     preloadLinks.add(url);
                 }
 
+                async function loadUrl(url, pushState = true) {
+                    try {
+                        const response = await fetch('/watch', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ url: url })
+                        });
+                        
+                        if (!response.ok) throw new Error('Failed to load page');
+                        
+                        const html = await response.text();
+                        if (pushState) {
+                            history.pushState({ url: url }, '', '/watch?url=' + encodeURIComponent(url));
+                        }
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    } catch (error) {
+                        console.error('Navigation error:', error);
+                    }
+                }
+
                 const originalFetch = window.fetch;
                 window.fetch = async (url, options = {}) => {
                     if (!isOnline) {
@@ -417,7 +457,7 @@ function modifyHtml(html, baseUrl) {
                             return resourceCache.get(cacheKey).clone();
                         }
 
-                        const response = await originalFetch('/proxy?url=' + encodeURIComponent(absoluteUrl), {
+                        const response = await originalFetch('/watch?url=' + encodeURIComponent(absoluteUrl), {
                             ...options,
                             headers: {
                                 ...options.headers,
@@ -439,8 +479,8 @@ function modifyHtml(html, baseUrl) {
                 XHR.open = function(method, url, ...rest) {
                     try {
                         const absoluteUrl = new URL(url, window.location.href).href;
-                        prefetchResource('/proxy?url=' + encodeURIComponent(absoluteUrl));
-                        return originalOpen.call(this, method, '/proxy?url=' + encodeURIComponent(absoluteUrl), ...rest);
+                        prefetchResource('/watch?url=' + encodeURIComponent(absoluteUrl));
+                        return originalOpen.call(this, method, '/watch?url=' + encodeURIComponent(absoluteUrl), ...rest);
                     } catch (e) {
                         return originalOpen.call(this, method, url, ...rest);
                     }
@@ -453,19 +493,19 @@ function modifyHtml(html, baseUrl) {
                         if (href && !href.startsWith('javascript:') && !href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
                             e.preventDefault();
                             const absoluteUrl = new URL(href, window.location.href).href;
-                            window.location.href = '/proxy?url=' + encodeURIComponent(absoluteUrl);
+                            loadUrl(absoluteUrl);
                         }
                     }
                 }, true);
 
                 window.location.assign = (url) => {
                     const absoluteUrl = new URL(url, window.location.href).href;
-                    window.location.href = '/proxy?url=' + encodeURIComponent(absoluteUrl);
+                    loadUrl(absoluteUrl);
                 };
 
                 window.location.replace = (url) => {
                     const absoluteUrl = new URL(url, window.location.href).href;
-                    window.location.href = '/proxy?url=' + encodeURIComponent(absoluteUrl);
+                    loadUrl(absoluteUrl);
                 };
             })();
         </script>
@@ -477,7 +517,7 @@ function modifyHtml(html, baseUrl) {
         .replace(/(href|src|action)=["']((?!data:|javascript:|#|mailto:|tel:).+?)["']/gi, (match, attr, url) => {
             try {
                 const absoluteUrl = new URL(url, baseUrl).href;
-                return `${attr}="/proxy?url=${encodeURIComponent(absoluteUrl)}"`;
+                return `${attr}="/watch?url=${encodeURIComponent(absoluteUrl)}"`;
             } catch (e) {
                 return match;
             }
@@ -485,14 +525,14 @@ function modifyHtml(html, baseUrl) {
         .replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
             try {
                 const absoluteUrl = new URL(url, baseUrl).href;
-                return `url('/proxy?url=${encodeURIComponent(absoluteUrl)}')`;
+                return `url('/watch?url=${encodeURIComponent(absoluteUrl)}')`;
             } catch (e) {
                 return match;
             }
         });
 }
 
-app.get('/proxy', async (req, res) => {
+app.get('/watch', async (req, res) => {
     try {
         const targetUrl = decodeURIComponent(req.query.url);
         const response = await fetchWithRedirects(targetUrl);
@@ -522,7 +562,7 @@ app.get('/proxy', async (req, res) => {
     }
 });
 
-app.post('/proxy', async (req, res) => {
+app.post('/watch', async (req, res) => {
     try {
         let targetUrl = req.body.url;
         if (!targetUrl.startsWith('http')) {
@@ -552,4 +592,4 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-// v1.13
+// v1.14
