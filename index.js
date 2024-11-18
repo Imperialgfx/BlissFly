@@ -3,6 +3,8 @@ const cors = require('cors');
 const https = require('https');
 const http = require('http');
 const zlib = require('zlib');
+const crypto = require('crypto');
+const path = require('path');
 
 class CacheManager {
     constructor(maxSize = 100) {
@@ -47,8 +49,9 @@ class CacheManager {
 const app = express();
 const cache = new CacheManager(100);
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.14';
+const VERSION = 'v1.15';
 
+// Middleware setup
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -59,242 +62,40 @@ app.use((req, res, next) => {
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'public, max-age=300',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE, HEAD',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+        'Access-Control-Max-Age': '86400'
     });
     next();
 });
 
-app.get('/', (req, res) => {
-  res.setHeader('Content-Type', 'text/html');
-  res.send(`
-    <html>
-      <head>
-        <title>Web Viewer</title>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { 
-            font-family: Arial, sans-serif; 
-            margin: 0;
-            padding: 0;
-            background: #f5f5f5;
-          }
-          #content {
-            padding: 20px;
-          }
-          form { 
-            margin: 20px auto;
-            max-width: 500px;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          }
-          input { 
-            padding: 10px;
-            width: 100%;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-          }
-          button { 
-            padding: 10px 20px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background 0.2s;
-          }
-          button:hover {
-            background: #0056b3;
-          }
-          .version {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            font-size: 12px;
-            color: #666;
-          }
-          #loading {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.95);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-          }
-          .loader {
-            width: 64px;
-            height: 64px;
-            position: relative;
-            background: transparent;
-            border-radius: 50%;
-            transform: rotate(45deg);
-          }
-          .loader::before {
-            content: '🪰';
-            position: absolute;
-            font-size: 32px;
-            animation: fly 2s linear infinite;
-          }
-          .loader::after {
-            content: '💩';
-            position: absolute;
-            font-size: 24px;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-          }
-          @keyframes fly {
-            0% { transform: rotate(0deg) translateX(30px) rotate(0deg); }
-            100% { transform: rotate(360deg) translateX(30px) rotate(-360deg); }
-          }
-          #loadingText {
-            margin-top: 10px;
-            color: #333;
-          }
-          #error {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            z-index: 1001;
-            text-align: center;
-          }
-          #error button {
-            margin-top: 10px;
-          }
-        </style>
-      </head>
-      <body>
-        <div id="content">
-          <form id="proxyForm">
-            <input type="text" name="url" placeholder="Enter website URL" autocomplete="off">
-            <button type="submit">Browse</button>
-          </form>
-          <div class="version">${VERSION}</div>
-        </div>
-        <div id="loading">
-          <div class="loader"></div>
-          <div id="loadingText">Loading...</div>
-        </div>
-        <div id="error">
-          <h3>Failed to load the page</h3>
-          <p id="errorDetails"></p>
-          <button onclick="retryLastRequest()">Try Again</button>
-          <button onclick="hideError()">Close</button>
-        </div>
-        <script>
-          let dots = 0;
-          let loadingInterval;
-          let lastRequestUrl = '';
+// URL encoding/decoding functions
+function encodeUrl(url) {
+    return Buffer.from(url).toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
 
-          function updateLoadingText() {
-            const text = 'Loading' + '.'.repeat(dots + 1);
-            document.getElementById('loadingText').textContent = text;
-            dots = (dots + 1) % 3;
-          }
+function decodeUrl(encoded) {
+    encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    while (encoded.length % 4) encoded += '=';
+    return Buffer.from(encoded, 'base64').toString();
+}
 
-          function showError(message) {
-            const error = document.getElementById('error');
-            const errorDetails = document.getElementById('errorDetails');
-            errorDetails.textContent = message;
-            error.style.display = 'block';
-            document.getElementById('loading').style.display = 'none';
-          }
-
-          function hideError() {
-            document.getElementById('error').style.display = 'none';
-          }
-
-          function retryLastRequest() {
-            hideError();
-            if (lastRequestUrl) {
-              loadUrl(lastRequestUrl);
-            }
-          }
-
-          async function loadUrl(url, pushState = true) {
-            const loading = document.getElementById('loading');
-            loading.style.display = 'flex';
-            lastRequestUrl = url;
-            
-            loadingInterval = setInterval(updateLoadingText, 500);
-
-            try {
-              const response = await fetch('/watch', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: url })
-              });
-              
-              if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.details || 'Failed to load the page');
-              }
-              
-              const html = await response.text();
-              if (pushState) {
-                history.pushState({ url: url }, '', '/watch?url=' + encodeURIComponent(url));
-              }
-              document.open();
-              document.write(html);
-              document.close();
-              
-              window.addEventListener('load', function() {
-                if (loadingInterval) clearInterval(loadingInterval);
-                const loadingElement = document.getElementById('loading');
-                if (loadingElement) loadingElement.style.display = 'none';
-              });
-            } catch (error) {
-              console.error('Error:', error);
-              showError(error.message);
-              if (loadingInterval) clearInterval(loadingInterval);
-            }
-          }
-
-          document.getElementById('proxyForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const url = document.querySelector('input[name="url"]').value;
-            loadUrl(url);
-          });
-
-          window.addEventListener('popstate', function(e) {
-            if (e.state && e.state.url) {
-              loadUrl(e.state.url, false);
-            }
-          });
-        </script>
-      </body>
-    </html>
-  `);
-});
-
-async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
+// Request handling functions
+async function fetchWithRedirects(url, options = {}, maxRedirects = 10, retryCount = 3) {
     const cachedResponse = cache.get(url);
     if (cachedResponse) return cachedResponse;
 
     const visitedUrls = new Set();
+    let lastError;
 
     for (let attempt = 0; attempt < retryCount; attempt++) {
         try {
             return await new Promise((resolve, reject) => {
                 const protocol = url.startsWith('https') ? https : http;
-                const options = new URL(url);
+                const urlObj = new URL(url);
 
                 function makeRequest(currentUrl, redirectCount = 0) {
                     if (visitedUrls.has(currentUrl.href)) {
@@ -306,21 +107,21 @@ async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
                     const requestOptions = {
                         hostname: currentUrl.hostname,
                         path: currentUrl.pathname + currentUrl.search,
-                        method: 'GET',
+                        method: options.method || 'GET',
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124',
-                            'Accept': 'image/*, text/*, application/*, */*',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
                             'Accept-Language': 'en-US,en;q=0.9',
                             'Accept-Encoding': 'gzip, deflate, br',
                             'Connection': 'keep-alive',
-                            'Cache-Control': 'no-cache',
-                            'Pragma': 'no-cache',
-                            'Host': currentUrl.hostname,
-                            'Sec-Fetch-Mode': 'cors',
-                            'Sec-Fetch-Site': 'cross-site',
-                            'Referer': currentUrl.origin
+                            'Upgrade-Insecure-Requests': '1',
+                            'Sec-Fetch-Site': 'none',
+                            'Sec-Fetch-Mode': 'navigate',
+                            'Sec-Fetch-User': '?1',
+                            'Sec-Fetch-Dest': 'document',
+                            ...options.headers
                         },
-                        timeout: 15000
+                        timeout: 30000
                     };
 
                     const req = protocol.request(requestOptions, (response) => {
@@ -339,10 +140,8 @@ async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
                             return;
                         }
 
-                        const encoding = response.headers['content-encoding'];
                         let output;
-
-                        switch (encoding) {
+                        switch (response.headers['content-encoding']) {
                             case 'br':
                                 output = zlib.createBrotliDecompress();
                                 response.pipe(output);
@@ -369,47 +168,51 @@ async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
                                 statusCode: response.statusCode
                             };
                             
-                            cache.set(url, result);
+                            if (response.statusCode === 200) {
+                                cache.set(url, result);
+                            }
                             resolve(result);
                         });
                     });
 
                     req.on('error', (error) => {
-                        console.error(`Attempt ${attempt + 1} failed:`, error);
-                        reject(new Error('Connection failed: The server is not responding'));
+                        lastError = error;
+                        reject(new Error('Connection failed: ' + error.message));
                     });
 
                     req.on('timeout', () => {
                         req.destroy();
-                        reject(new Error('Request timed out: The server took too long to respond'));
+                        reject(new Error('Request timed out'));
                     });
 
+                    if (options.body) {
+                        req.write(options.body);
+                    }
                     req.end();
                 }
 
-                makeRequest(new URL(url));
+                makeRequest(urlObj);
             });
         } catch (error) {
+            lastError = error;
             if (attempt === retryCount - 1) throw error;
-            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
         }
     }
+    throw lastError;
 }
 
+// HTML modification and URL rewriting functions
 function modifyHtml(html, baseUrl) {
     const proxyScript = `
         <script>
             (function() {
                 const resourceCache = new Map();
                 const preloadLinks = new Set();
-                let isOnline = true;
+                let isOnline = navigator.onLine;
 
-                window.addEventListener('online', function() {
-                    isOnline = true;
-                });
-                window.addEventListener('offline', function() {
-                    isOnline = false;
-                });
+                window.addEventListener('online', () => isOnline = true);
+                window.addEventListener('offline', () => isOnline = false);
 
                 function prefetchResource(url) {
                     if (preloadLinks.has(url)) return;
@@ -444,11 +247,10 @@ function modifyHtml(html, baseUrl) {
                     }
                 }
 
+                // Override fetch API
                 const originalFetch = window.fetch;
                 window.fetch = async (url, options = {}) => {
-                    if (!isOnline) {
-                        throw new Error('You are offline');
-                    }
+                    if (!isOnline) throw new Error('You are offline');
                     try {
                         const absoluteUrl = new URL(url, window.location.href).href;
                         const cacheKey = absoluteUrl + JSON.stringify(options);
@@ -474,6 +276,7 @@ function modifyHtml(html, baseUrl) {
                     }
                 };
 
+                // Override XMLHttpRequest
                 const XHR = XMLHttpRequest.prototype;
                 const originalOpen = XHR.open;
                 XHR.open = function(method, url, ...rest) {
@@ -486,11 +289,13 @@ function modifyHtml(html, baseUrl) {
                     }
                 };
 
+                // Handle clicks on links
                 window.addEventListener('click', function(e) {
                     const link = e.target.closest('a');
                     if (link) {
                         const href = link.getAttribute('href');
-                        if (href && !href.startsWith('javascript:') && !href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+                        if (href && !href.startsWith('javascript:') && !href.startsWith('#') && 
+                            !href.startsWith('mailto:') && !href.startsWith('tel:')) {
                             e.preventDefault();
                             const absoluteUrl = new URL(href, window.location.href).href;
                             loadUrl(absoluteUrl);
@@ -498,11 +303,14 @@ function modifyHtml(html, baseUrl) {
                     }
                 }, true);
 
+                // Override location methods
+                const originalAssign = window.location.assign;
                 window.location.assign = (url) => {
                     const absoluteUrl = new URL(url, window.location.href).href;
                     loadUrl(absoluteUrl);
                 };
 
+                const originalReplace = window.location.replace;
                 window.location.replace = (url) => {
                     const absoluteUrl = new URL(url, window.location.href).href;
                     loadUrl(absoluteUrl);
@@ -532,13 +340,198 @@ function modifyHtml(html, baseUrl) {
         });
 }
 
+// Main route handlers
+app.get('/', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Web Proxy ${VERSION}</title>
+            <style>
+                :root {
+                    --primary-color: #2196F3;
+                    --hover-color: #1976D2;
+                    --background: #f5f5f5;
+                    --card-background: #ffffff;
+                }
+
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }
+
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                    line-height: 1.6;
+                    background: var(--background);
+                    color: #333;
+                    min-height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .container {
+                    width: 100%;
+                    max-width: 600px;
+                    padding: 2rem;
+                }
+
+                .proxy-card {
+                    background: var(--card-background);
+                    border-radius: 10px;
+                    padding: 2rem;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                }
+
+                .title {
+                    text-align: center;
+                    margin-bottom: 2rem;
+                    color: var(--primary-color);
+                }
+
+                .proxy-form {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                }
+
+                .input-group {
+                    position: relative;
+                }
+
+                .url-input {
+                    width: 100%;
+                    padding: 12px;
+                    border: 2px solid #e0e0e0;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    transition: all 0.3s ease;
+                }
+
+                .url-input:focus {
+                    border-color: var(--primary-color);
+                    outline: none;
+                    box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+                }
+
+                .submit-btn {
+                    background: var(--primary-color);
+                    color: white;
+                    border: none;
+                    padding: 12px;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    cursor: pointer;
+                    transition: background 0.3s ease;
+                }
+
+                .submit-btn:hover {
+                    background: var(--hover-color);
+                }
+
+                .version {
+                    position: fixed;
+                    bottom: 1rem;
+                    right: 1rem;
+                    font-size: 0.8rem;
+                    color: #666;
+                }
+
+                #loading {
+                    display: none;
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(255, 255, 255, 0.9);
+                    justify-content: center;
+                    align-items: center;
+                    z-index: 1000;
+                }
+
+                .loader {
+                    width: 48px;
+                    height: 48px;
+                    border: 5px solid var(--primary-color);
+                    border-bottom-color: transparent;
+                    border-radius: 50%;
+                    animation: rotation 1s linear infinite;
+                }
+
+                @keyframes rotation {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="proxy-card">
+                    <h1 class="title">Web Proxy</h1>
+                    <form id="proxyForm" class="proxy-form">
+                        <div class="input-group">
+                            <input type="url" 
+                                   class="url-input" 
+                                   placeholder="Enter URL (e.g., https://example.com)" 
+                                   required
+                                   pattern="https?://.*"
+                                   title="Please enter a valid URL starting with http:// or https://">
+                        </div>
+                        <button type="submit" class="submit-btn">Browse</button>
+                    </form>
+                </div>
+            </div>
+            <div class="version">Version ${VERSION}</div>
+            <div id="loading">
+                <div class="loader"></div>
+            </div>
+            <script>
+                document.getElementById('proxyForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const url = e.target.querySelector('input').value;
+                    document.getElementById('loading').style.display = 'flex';
+                    try {
+                        const response = await fetch('/watch', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ url })
+                        });
+                        
+                        if (!response.ok) throw new Error('Failed to load page');
+                        
+                        const html = await response.text();
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    } catch (error) {
+                        alert('Error loading page: ' + error.message);
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                });
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+// Watch route handlers
 app.get('/watch', async (req, res) => {
     try {
         const targetUrl = decodeURIComponent(req.query.url);
         const response = await fetchWithRedirects(targetUrl);
         
+        // Copy original headers while excluding problematic ones
         Object.entries(response.headers).forEach(([key, value]) => {
-            if (!['content-encoding', 'content-length', 'transfer-encoding'].includes(key)) {
+            if (!['content-encoding', 'content-length', 'transfer-encoding', 'content-security-policy'].includes(key.toLowerCase())) {
                 res.set(key, value);
             }
         });
@@ -550,6 +543,7 @@ app.get('/watch', async (req, res) => {
             const modifiedHtml = modifyHtml(html, targetUrl);
             res.send(modifiedHtml);
         } else {
+            // Handle binary data (images, videos, etc.)
             res.send(response.data);
         }
     } catch (error) {
@@ -569,7 +563,18 @@ app.post('/watch', async (req, res) => {
             targetUrl = 'https://' + targetUrl;
         }
         
-        const response = await fetchWithRedirects(targetUrl);
+        const response = await fetchWithRedirects(targetUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Upgrade-Insecure-Requests': '1'
+            }
+        });
+
+        const contentType = response.headers['content-type'] || '';
         const html = response.data.toString();
         const modifiedHtml = modifyHtml(html, targetUrl);
         
@@ -584,12 +589,25 @@ app.post('/watch', async (req, res) => {
     }
 });
 
-setInterval(() => {
-    cache.prune();
-}, 300000);
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Global error:', err);
+    res.status(500).json({
+        error: 'Internal server error',
+        details: err.message,
+        retryable: true
+    });
 });
 
-// v1.14
+// Cache maintenance
+setInterval(() => {
+    cache.prune();
+}, 300000); // Every 5 minutes
+
+// Start server
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Proxy server running on port ${PORT}`);
+    console.log(`Version: ${VERSION}`);
+});
+
+module.exports = app;
