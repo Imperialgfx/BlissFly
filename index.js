@@ -47,7 +47,7 @@ class CacheManager {
 const app = express();
 const cache = new CacheManager(100);
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.12';
+const VERSION = 'v1.13';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -271,11 +271,11 @@ app.get('/', (req, res) => {
     </html>
   `);
 });
+
 async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
     const cachedResponse = cache.get(url);
     if (cachedResponse) return cachedResponse;
 
-    // Track visited URLs to detect circular redirects
     const visitedUrls = new Set();
 
     for (let attempt = 0; attempt < retryCount; attempt++) {
@@ -285,7 +285,6 @@ async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
                 const options = new URL(url);
 
                 function makeRequest(currentUrl, redirectCount = 0) {
-                    // Check for circular redirects
                     if (visitedUrls.has(currentUrl.href)) {
                         reject(new Error('Circular redirect detected'));
                         return;
@@ -380,12 +379,21 @@ async function fetchWithRedirects(url, maxRedirects = 10, retryCount = 3) {
         }
     }
 }
+
 function modifyHtml(html, baseUrl) {
     const proxyScript = `
         <script>
             (function() {
                 const resourceCache = new Map();
                 const preloadLinks = new Set();
+                let isOnline = true;
+
+                window.addEventListener('online', function() {
+                    isOnline = true;
+                });
+                window.addEventListener('offline', function() {
+                    isOnline = false;
+                });
 
                 function prefetchResource(url) {
                     if (preloadLinks.has(url)) return;
@@ -398,6 +406,9 @@ function modifyHtml(html, baseUrl) {
 
                 const originalFetch = window.fetch;
                 window.fetch = async (url, options = {}) => {
+                    if (!isOnline) {
+                        throw new Error('You are offline');
+                    }
                     try {
                         const absoluteUrl = new URL(url, window.location.href).href;
                         const cacheKey = absoluteUrl + JSON.stringify(options);
@@ -435,14 +446,26 @@ function modifyHtml(html, baseUrl) {
                     }
                 };
 
+                window.addEventListener('click', function(e) {
+                    const link = e.target.closest('a');
+                    if (link) {
+                        const href = link.getAttribute('href');
+                        if (href && !href.startsWith('javascript:') && !href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+                            e.preventDefault();
+                            const absoluteUrl = new URL(href, window.location.href).href;
+                            window.location.href = '/proxy?url=' + encodeURIComponent(absoluteUrl);
+                        }
+                    }
+                }, true);
+
                 window.location.assign = (url) => {
-                    prefetchResource('/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href));
-                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
+                    const absoluteUrl = new URL(url, window.location.href).href;
+                    window.location.href = '/proxy?url=' + encodeURIComponent(absoluteUrl);
                 };
 
                 window.location.replace = (url) => {
-                    prefetchResource('/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href));
-                    window.location.href = '/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).href);
+                    const absoluteUrl = new URL(url, window.location.href).href;
+                    window.location.href = '/proxy?url=' + encodeURIComponent(absoluteUrl);
                 };
             })();
         </script>
@@ -529,4 +552,4 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-// v1.12
+// v1.13
