@@ -4,6 +4,7 @@ const https = require('https');
 const http = require('http');
 const zlib = require('zlib');
 const crypto = require('crypto');
+const WebSocket = require('ws');
 const path = require('path');
 
 class CacheManager {
@@ -47,11 +48,41 @@ class CacheManager {
 }
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 const cache = new CacheManager(100);
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.15';
+const VERSION = 'v1.16';
 
-// Middleware setup
+// WebSocket handling
+wss.on('connection', (ws) => {
+    ws.on('message', async (message) => {
+        try {
+            const data = JSON.parse(message);
+            if (data.type === 'proxy') {
+                const response = await fetchWithRedirects(data.url, {
+                    headers: {
+                        'Upgrade': 'websocket',
+                        'Connection': 'Upgrade',
+                        'Sec-WebSocket-Key': crypto.randomBytes(16).toString('base64'),
+                        'Sec-WebSocket-Version': '13'
+                    }
+                });
+                ws.send(JSON.stringify({
+                    type: 'response',
+                    data: response.data.toString('base64'),
+                    headers: response.headers
+                }));
+            }
+        } catch (error) {
+            ws.send(JSON.stringify({
+                type: 'error',
+                message: error.message
+            }));
+        }
+    });
+});
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -69,7 +100,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// URL encoding/decoding functions
+// Enhanced URL handling functions
 function encodeUrl(url) {
     return Buffer.from(url).toString('base64')
         .replace(/\+/g, '-')
@@ -83,7 +114,6 @@ function decodeUrl(encoded) {
     return Buffer.from(encoded, 'base64').toString();
 }
 
-// Request handling functions
 async function fetchWithRedirects(url, options = {}, maxRedirects = 10, retryCount = 3) {
     const cachedResponse = cache.get(url);
     if (cachedResponse) return cachedResponse;
@@ -110,7 +140,7 @@ async function fetchWithRedirects(url, options = {}, maxRedirects = 10, retryCou
                         method: options.method || 'GET',
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
                             'Accept-Language': 'en-US,en;q=0.9',
                             'Accept-Encoding': 'gzip, deflate, br',
                             'Connection': 'keep-alive',
@@ -119,6 +149,8 @@ async function fetchWithRedirects(url, options = {}, maxRedirects = 10, retryCou
                             'Sec-Fetch-Mode': 'navigate',
                             'Sec-Fetch-User': '?1',
                             'Sec-Fetch-Dest': 'document',
+                            'Sec-WebSocket-Protocol': 'binary',
+                            'Sec-WebSocket-Version': '13',
                             ...options.headers
                         },
                         timeout: 30000
@@ -202,7 +234,7 @@ async function fetchWithRedirects(url, options = {}, maxRedirects = 10, retryCou
     throw lastError;
 }
 
-// HTML modification and URL rewriting functions
+// Enhanced HTML modification function
 function modifyHtml(html, baseUrl) {
     const proxyScript = `
         <script>
@@ -210,42 +242,45 @@ function modifyHtml(html, baseUrl) {
                 const resourceCache = new Map();
                 const preloadLinks = new Set();
                 let isOnline = navigator.onLine;
+                let ws = new WebSocket('ws://' + window.location.host);
+
+                ws.onmessage = function(event) {
+                    try {
+                        const response = JSON.parse(event.data);
+                        if (response.type === 'response') {
+                            const data = atob(response.data);
+                            // Handle WebSocket responses
+                            if (window.gameProxy) {
+                                window.gameProxy.handleMessage(data);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('WebSocket message error:', e);
+                    }
+                };
 
                 window.addEventListener('online', () => isOnline = true);
                 window.addEventListener('offline', () => isOnline = false);
 
-                function prefetchResource(url) {
-                    if (preloadLinks.has(url)) return;
-                    const link = document.createElement('link');
-                    link.rel = 'prefetch';
-                    link.href = url;
-                    document.head.appendChild(link);
-                    preloadLinks.add(url);
-                }
-
-                async function loadUrl(url, pushState = true) {
-                    try {
-                        const response = await fetch('/watch', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ url: url })
-                        });
-                        
-                        if (!response.ok) throw new Error('Failed to load page');
-                        
-                        const html = await response.text();
-                        if (pushState) {
-                            history.pushState({ url: url }, '', '/watch?url=' + encodeURIComponent(url));
+                // Enhanced link click handler
+                window.addEventListener('click', function(e) {
+                    const link = e.target.closest('a');
+                    if (link) {
+                        const href = link.getAttribute('href');
+                        if (href && !href.startsWith('javascript:') && !href.startsWith('#') && 
+                            !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            try {
+                                const absoluteUrl = new URL(href, window.location.href).href;
+                                window.location.href = '/watch?url=' + encodeURIComponent(absoluteUrl);
+                            } catch (error) {
+                                console.error('URL processing error:', error);
+                            }
                         }
-                        document.open();
-                        document.write(html);
-                        document.close();
-                    } catch (error) {
-                        console.error('Navigation error:', error);
                     }
-                }
+                }, true);
 
                 // Override fetch API
                 const originalFetch = window.fetch;
@@ -253,13 +288,9 @@ function modifyHtml(html, baseUrl) {
                     if (!isOnline) throw new Error('You are offline');
                     try {
                         const absoluteUrl = new URL(url, window.location.href).href;
-                        const cacheKey = absoluteUrl + JSON.stringify(options);
+                        const proxyUrl = '/watch?url=' + encodeURIComponent(absoluteUrl);
                         
-                        if (resourceCache.has(cacheKey)) {
-                            return resourceCache.get(cacheKey).clone();
-                        }
-
-                        const response = await originalFetch('/watch?url=' + encodeURIComponent(absoluteUrl), {
+                        const response = await originalFetch(proxyUrl, {
                             ...options,
                             headers: {
                                 ...options.headers,
@@ -268,11 +299,10 @@ function modifyHtml(html, baseUrl) {
                         });
 
                         if (!response.ok) throw new Error('Resource fetch failed');
-                        resourceCache.set(cacheKey, response.clone());
                         return response;
                     } catch (e) {
                         console.error('Fetch error:', e);
-                        return originalFetch(url, options);
+                        throw e;
                     }
                 };
 
@@ -282,38 +312,30 @@ function modifyHtml(html, baseUrl) {
                 XHR.open = function(method, url, ...rest) {
                     try {
                         const absoluteUrl = new URL(url, window.location.href).href;
-                        prefetchResource('/watch?url=' + encodeURIComponent(absoluteUrl));
-                        return originalOpen.call(this, method, '/watch?url=' + encodeURIComponent(absoluteUrl), ...rest);
+                        const proxyUrl = '/watch?url=' + encodeURIComponent(absoluteUrl);
+                        return originalOpen.call(this, method, proxyUrl, ...rest);
                     } catch (e) {
                         return originalOpen.call(this, method, url, ...rest);
                     }
                 };
 
-                // Handle clicks on links
-                window.addEventListener('click', function(e) {
-                    const link = e.target.closest('a');
-                    if (link) {
-                        const href = link.getAttribute('href');
-                        if (href && !href.startsWith('javascript:') && !href.startsWith('#') && 
-                            !href.startsWith('mailto:') && !href.startsWith('tel:')) {
-                            e.preventDefault();
-                            const absoluteUrl = new URL(href, window.location.href).href;
-                            loadUrl(absoluteUrl);
+                // Game support
+                window.gameProxy = {
+                    ws: ws,
+                    sendMessage: function(data) {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'proxy',
+                                data: data
+                            }));
+                        }
+                    },
+                    handleMessage: function(data) {
+                        // Handle game-specific messages
+                        if (window.gameInstance) {
+                            window.gameInstance.SendMessage('GameManager', 'ReceiveData', data);
                         }
                     }
-                }, true);
-
-                // Override location methods
-                const originalAssign = window.location.assign;
-                window.location.assign = (url) => {
-                    const absoluteUrl = new URL(url, window.location.href).href;
-                    loadUrl(absoluteUrl);
-                };
-
-                const originalReplace = window.location.replace;
-                window.location.replace = (url) => {
-                    const absoluteUrl = new URL(url, window.location.href).href;
-                    loadUrl(absoluteUrl);
                 };
             })();
         </script>
@@ -435,39 +457,34 @@ app.get('/', (req, res) => {
                     background: var(--hover-color);
                 }
 
+                .help-text {
+                    margin-top: 20px;
+                    padding: 15px;
+                    background: #fff;
+                    border-radius: 6px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                }
+
+                .help-text h3 {
+                    color: var(--primary-color);
+                    margin-bottom: 10px;
+                }
+
+                .help-text ol {
+                    padding-left: 20px;
+                }
+
+                .help-text li {
+                    margin: 5px 0;
+                    color: #666;
+                }
+
                 .version {
                     position: fixed;
                     bottom: 1rem;
                     right: 1rem;
                     font-size: 0.8rem;
                     color: #666;
-                }
-
-                #loading {
-                    display: none;
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(255, 255, 255, 0.9);
-                    justify-content: center;
-                    align-items: center;
-                    z-index: 1000;
-                }
-
-                .loader {
-                    width: 48px;
-                    height: 48px;
-                    border: 5px solid var(--primary-color);
-                    border-bottom-color: transparent;
-                    border-radius: 50%;
-                    animation: rotation 1s linear infinite;
-                }
-
-                @keyframes rotation {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
                 }
             </style>
         </head>
@@ -486,36 +503,26 @@ app.get('/', (req, res) => {
                         </div>
                         <button type="submit" class="submit-btn">Browse</button>
                     </form>
+                    <div class="help-text">
+                        <h3>How to Find a Website URL:</h3>
+                        <ol>
+                            <li>Go to Google and search for the website you want to visit</li>
+                            <li>Right-click on the search result link</li>
+                            <li>Select "Copy link address" from the menu</li>
+                            <li>Paste the copied URL into the box above</li>
+                        </ol>
+                        <p style="margin-top: 10px; color: #666;">
+                            Note: URLs must start with "http://" or "https://"
+                        </p>
+                    </div>
                 </div>
             </div>
             <div class="version">Version ${VERSION}</div>
-            <div id="loading">
-                <div class="loader"></div>
-            </div>
             <script>
                 document.getElementById('proxyForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
                     const url = e.target.querySelector('input').value;
-                    document.getElementById('loading').style.display = 'flex';
-                    try {
-                        const response = await fetch('/watch', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ url })
-                        });
-                        
-                        if (!response.ok) throw new Error('Failed to load page');
-                        
-                        const html = await response.text();
-                        document.open();
-                        document.write(html);
-                        document.close();
-                    } catch (error) {
-                        alert('Error loading page: ' + error.message);
-                        document.getElementById('loading').style.display = 'none';
-                    }
+                    window.location.href = '/watch?url=' + encodeURIComponent(url);
                 });
             </script>
         </body>
@@ -529,7 +536,7 @@ app.get('/watch', async (req, res) => {
         const targetUrl = decodeURIComponent(req.query.url);
         const response = await fetchWithRedirects(targetUrl);
         
-        // Copy original headers while excluding problematic ones
+        // Set headers while excluding problematic ones
         Object.entries(response.headers).forEach(([key, value]) => {
             if (!['content-encoding', 'content-length', 'transfer-encoding', 'content-security-policy'].includes(key.toLowerCase())) {
                 res.set(key, value);
@@ -542,17 +549,30 @@ app.get('/watch', async (req, res) => {
             const html = response.data.toString();
             const modifiedHtml = modifyHtml(html, targetUrl);
             res.send(modifiedHtml);
+        } else if (contentType.includes('javascript')) {
+            // Handle JavaScript files
+            let jsContent = response.data.toString();
+            jsContent = jsContent.replace(/XMLHttpRequest/g, 'ProxiedXMLHttpRequest');
+            jsContent = jsContent.replace(/WebSocket/g, 'ProxiedWebSocket');
+            res.set('Content-Type', 'application/javascript');
+            res.send(jsContent);
         } else {
-            // Handle binary data (images, videos, etc.)
+            // Handle other content types (images, videos, etc.)
             res.send(response.data);
         }
     } catch (error) {
         console.error('Proxy error:', error);
-        res.status(503).json({
-            error: 'Resource loading failed',
-            details: error.message,
-            retryable: true
-        });
+        res.status(503).send(`
+            <html>
+                <body>
+                    <h2>Resource Loading Error</h2>
+                    <p>Failed to load: ${req.query.url}</p>
+                    <p>Error: ${error.message}</p>
+                    <button onclick="window.location.reload()">Retry</button>
+                    <button onclick="window.location.href='/'">Return Home</button>
+                </body>
+            </html>
+        `);
     }
 });
 
@@ -605,9 +625,10 @@ setInterval(() => {
 }, 300000); // Every 5 minutes
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Proxy server running on port ${PORT}`);
     console.log(`Version: ${VERSION}`);
+    console.log(`WebSocket server active`);
 });
 
 module.exports = app;
