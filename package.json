@@ -1,14 +1,14 @@
 {
-  "name": "web-viewer",
+  "name": "web-proxy",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "proxy.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node proxy.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "http-proxy-middleware": "^3.0.1",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "ws": "^8.14.2"
   },
   "engines": {
     "node": ">=18.0.0"
