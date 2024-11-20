@@ -9,6 +9,11 @@ const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
 
+// Initialize express and server
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
 // Consts and Cfgs
 const PORT = process.env.PORT || 10000;
 const VERSION = 'v1.21';
