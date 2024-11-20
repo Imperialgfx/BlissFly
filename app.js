@@ -11,7 +11,7 @@ const { URL } = require('url');
 
 // Consts and Cfgs
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.20';
+const VERSION = 'v1.21';
 const DEBUG = process.env.DEBUG === 'true';
 const MAX_RETRIES = 3;
 const TIMEOUT = 30000;
@@ -96,13 +96,13 @@ class AdvancedCache {
 
     _calculateSize(value) {
         if (typeof value === 'string') {
-            return value.length * 2; // Approximate UTF-16 string size
+            return value.length * 2;
         }
-        return 512; // Default size for other types
+        return 512;
     }
 
     _evictBatch() {
-        const itemsToEvict = Math.ceil(this.storage.size * 0.1); // Evict 10% of items
+        const itemsToEvict = Math.ceil(this.storage.size * 0.1);
         const sortedItems = Array.from(this.storage.entries())
             .sort((a, b) => (a[1].lastAccessed - b[1].lastAccessed));
 
@@ -116,7 +116,7 @@ class AdvancedCache {
 
     _conditionalCleanup() {
         const now = Date.now();
-        if (now - this.lastCleanup > 300000) { // 5 minutes
+        if (now - this.lastCleanup > 300000) {
             this._cleanup();
             this.lastCleanup = now;
         }
@@ -185,7 +185,6 @@ class WebSocketManager {
         ws.on('error', (error) => this.handleError(clientId, error));
         ws.on('pong', () => this.handlePong(clientId));
 
-        // ping interval
         const pingInterval = setInterval(() => {
             if (this.clients.has(clientId)) {
                 this.pingClient(clientId);
@@ -253,8 +252,6 @@ class WebSocketManager {
         if (gameState && gameState.players.has(clientId)) {
             Object.assign(gameState.state, data.state);
             gameState.timestamp = Date.now();
-            
-            // Broadcast to all players
             this.broadcastGameState(gameId);
         }
     }
@@ -271,17 +268,6 @@ class WebSocketManager {
                 result: actionResult,
                 timestamp: Date.now()
             });
-        }
-    }
-
-    processGameAction(gameState, action) {
-        switch (gameState.type) {
-            case 'html5':
-                return this.processHtml5GameAction(gameState, action);
-            case 'unity':
-                return this.processUnityGameAction(gameState, action);
-            default:
-                return this.processDefaultGameAction(gameState, action);
         }
     }
 
@@ -309,68 +295,6 @@ class WebSocketManager {
         }
     }
 
-    handleClose(clientId) {
-        const client = this.clients.get(clientId);
-        if (client?.gameState) {
-            const gameState = this.gameStates.get(client.gameState);
-            if (gameState) {
-                gameState.players.delete(clientId);
-                if (gameState.players.size === 0) {
-                    this.gameStates.delete(client.gameState);
-                } else {
-                    this.broadcastGameState(client.gameState);
-                }
-            }
-        }
-        this.clients.delete(clientId);
-    }
-
-    handleError(clientId, error) {
-        DEBUG && console.error(`WebSocket error for client ${clientId}:`, error);
-        this.sendToClient(clientId, {
-            type: WS_MESSAGES.ERROR,
-            message: 'Connection error occurred'
-        });
-    }
-
-    pingClient(clientId) {
-        const client = this.clients.get(clientId);
-        if (!client) return;
-
-        if (!client.isAlive) {
-            this.handleClose(clientId);
-            return;
-        }
-
-        client.isAlive = false;
-        client.ws.ping();
-    }
-
-    handlePong(clientId) {
-        const client = this.clients.get(clientId);
-        if (client) {
-            client.isAlive = true;
-            client.lastPing = Date.now();
-        }
-    }
-
-    sendToClient(clientId, data) {
-        const client = this.clients.get(clientId);
-        if (client && client.ws.readyState === WebSocket.OPEN) {
-            client.ws.send(JSON.stringify(data));
-        }
-    }
-
-    broadcastToGame(gameId, data) {
-        const gameState = this.gameStates.get(gameId);
-        if (gameState) {
-            for (const playerId of gameState.players) {
-                this.sendToClient(playerId, data);
-            }
-        }
-    }
-}
-
 // Initialize main application components
 const app = express();
 const server = http.createServer(app);
@@ -379,7 +303,6 @@ const cache = new AdvancedCache({
     maxSize: MAX_CACHE_SIZE,
     maxAge: CACHE_TTL
 });
-
 
 // URL utilities
 const normalizeUrl = (url) => {
@@ -417,7 +340,7 @@ app.use((req, res, next) => {
 // Initialize WebSocket manager
 const wsManager = new WebSocketManager(wss);
 
-// Content transformer for different types
+// Content transformer
 class ContentTransformer {
     static transformHtml(html, baseUrl) {
         const gameSupport = `
@@ -426,7 +349,6 @@ class ContentTransformer {
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const ws = new WebSocket(wsProtocol + '//' + window.location.host);
                     
-                    // Game state management
                     let gameState = null;
                     let gameFrame = null;
 
@@ -484,7 +406,6 @@ class ContentTransformer {
                         });
                     }
 
-                    // WebSocket event handlers
                     ws.onmessage = function(event) {
                         try {
                             const data = JSON.parse(event.data);
@@ -528,43 +449,33 @@ class ContentTransformer {
                         }
                     }
 
-                    // Enhanced link handling
                     document.addEventListener('click', function(e) {
                         const link = e.target.closest('a');
                         if (link) {
                             const href = link.getAttribute('href');
-                            if (href && !href.startsWith('javascript:') && !href.startsWith('#') && 
-                                !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+                            if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 
                                 try {
-                                    const absoluteUrl = new URL(href, window.location.href).href;
+                                    const baseUrl = window.location.href.split('?url=')[1];
+                                    const decodedBase = decodeURIComponent(atob(baseUrl));
+                                    const absoluteUrl = new URL(href, decodedBase).href;
                                     const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
                                     window.location.href = '/watch?url=' + encodedUrl;
                                 } catch (error) {
                                     console.error('URL processing error:', error);
+                                    showError('Invalid URL format');
                                 }
                             }
                         }
                     }, true);
 
-                    // Initialize after DOM is ready
                     if (document.readyState === 'loading') {
                         document.addEventListener('DOMContentLoaded', detectAndSetupGame);
                     } else {
                         detectAndSetupGame();
                     }
-
-                    // Loading animation
-                    const loadingAnimation = document.createElement('div');
-                    loadingAnimation.innerHTML = \`
-                        <div class="loading-animation">
-                            <span class="fly">🪰</span>
-                            <span class="poop">💩</span>
-                        </div>
-                    \`;
-                    document.body.appendChild(loadingAnimation);
                 })();
             </script>
         `;
@@ -604,7 +515,6 @@ class ContentTransformer {
                 const originalFetch = window.fetch;
                 const originalWebSocket = window.WebSocket;
 
-                // Override XMLHttpRequest
                 window.XMLHttpRequest = function() {
                     const xhr = new originalXHR();
                     const originalOpen = xhr.open;
@@ -622,7 +532,6 @@ class ContentTransformer {
                     return xhr;
                 };
 
-                // Override fetch
                 window.fetch = async function(url, options = {}) {
                     try {
                         const absoluteUrl = new URL(url, window.location.href).href;
@@ -633,7 +542,6 @@ class ContentTransformer {
                     }
                 };
 
-                // Override WebSocket
                 window.WebSocket = function(url, protocols) {
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     return new originalWebSocket(
@@ -664,12 +572,24 @@ app.get('/', (req, res) => {
                     --hover-color: #1976D2;
                     --background: #f5f5f5;
                     --card-background: #ffffff;
+                    --error-color: #ff4444;
                 }
 
                 * {
                     box-sizing: border-box;
                     margin: 0;
                     padding: 0;
+                }
+
+                .loading-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(255, 255, 255, 0.95);
+                    z-index: 999;
+                    display: none;
                 }
 
                 @keyframes flyAnimation {
@@ -695,33 +615,61 @@ app.get('/', (req, res) => {
                 }
 
                 .fly {
-                    font-size: 24px;
+                    font-size: 48px;
                     position: absolute;
                     animation: flyAnimation 2s infinite;
                 }
 
                 .poop {
-                    font-size: 24px;
+                    font-size: 48px;
                     animation: poopBounce 1s infinite;
                 }
 
-                .notification {
-                    position: fixed;
-                    top: -50px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: #663399;
-                    color: white;
-                    padding: 12px 24px;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-                    z-index: 1000;
-                    transition: top 0.5s ease;
-                    font-family: Arial, sans-serif;
+                .info-warning {
+                    margin-top: 10px;
+                    text-align: center;
                 }
 
-                .notification.show {
-                    top: 20px;
+                .warning-icon {
+                    animation: pulsate 2s infinite;
+                    color: var(--error-color);
+                    font-size: 1.5em;
+                    cursor: pointer;
+                }
+
+                @keyframes pulsate {
+                    0% { opacity: 1; color: var(--error-color); }
+                    50% { opacity: 0.5; color: darkred; }
+                    100% { opacity: 1; color: var(--error-color); }
+                }
+
+                .info-content {
+                    display: none;
+                    background: #fff;
+                    padding: 15px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    margin-top: 10px;
+                }
+
+                .error-popup {
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: linear-gradient(135deg, #ff4444, #ff6b6b);
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
+                    animation: shakeError 0.5s ease-in-out;
+                    z-index: 1001;
+                }
+
+                @keyframes shakeError {
+                    0%, 100% { transform: translate(-50%, -50%); }
+                    25% { transform: translate(-53%, -50%); }
+                    75% { transform: translate(-47%, -50%); }
                 }
 
                 body {
@@ -751,16 +699,6 @@ app.get('/', (req, res) => {
                     overflow: hidden;
                 }
 
-                .proxy-card::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    height: 4px;
-                    background: linear-gradient(90deg, var(--primary-color), var(--hover-color));
-                }
-
                 .title {
                     text-align: center;
                     margin-bottom: 2rem;
@@ -771,9 +709,9 @@ app.get('/', (req, res) => {
 
                 .title-fly {
                     position: absolute;
-                    top: 0;
-                    right: -30px;
-                    font-size: 0.8em;
+                    top: -10px;
+                    right: -40px;
+                    font-size: 1.2em;
                     animation: flyHover 2s infinite;
                 }
 
@@ -812,8 +750,6 @@ app.get('/', (req, res) => {
                     font-size: 16px;
                     cursor: pointer;
                     transition: all 0.3s ease;
-                    position: relative;
-                    overflow: hidden;
                 }
 
                 .submit-btn:hover {
@@ -839,9 +775,7 @@ app.get('/', (req, res) => {
             </style>
         </head>
         <body>
-            <div class="notification">
-                Enter any URL to begin browsing
-            </div>
+            <div class="loading-overlay"></div>
             <div class="loading-animation">
                 <span class="fly">🪰</span>
                 <span class="poop">💩</span>
@@ -856,6 +790,12 @@ app.get('/', (req, res) => {
                                required
                                autocomplete="off"
                                spellcheck="false">
+                        <div class="info-warning">
+                            <span class="warning-icon">⚠️</span>
+                            <div class="info-content">
+                                This proxy only searches with URLs please use a URL when searching (example.com)
+                            </div>
+                        </div>
                         <button type="submit" class="submit-btn">Browse</button>
                     </form>
                 </div>
@@ -863,41 +803,59 @@ app.get('/', (req, res) => {
             <div class="version">Version ${VERSION}</div>
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
-                    const notification = document.querySelector('.notification');
-                    notification.classList.add('show');
-                    setTimeout(() => {
-                        notification.classList.remove('show');
-                    }, 5000);
-
+                    const loadingOverlay = document.querySelector('.loading-overlay');
                     const loadingAnimation = document.querySelector('.loading-animation');
                     const form = document.getElementById('proxyForm');
                     const input = form.querySelector('input');
+                    const warningIcon = document.querySelector('.warning-icon');
+                    const infoContent = document.querySelector('.info-content');
+
+                    warningIcon.addEventListener('click', () => {
+                        infoContent.style.display = infoContent.style.display === 'none' ? 'block' : 'none';
+                    });
 
                     form.addEventListener('submit', async (e) => {
                         e.preventDefault();
                         let url = input.value.trim();
                         
-                        // Add https:// if no protocol specified
+                        if (!url) {
+                            showError('Please enter a URL');
+                            return;
+                        }
+
                         if (!url.startsWith('http://') && !url.startsWith('https://')) {
                             url = 'https://' + url;
                         }
 
+                        loadingOverlay.style.display = 'block';
                         loadingAnimation.style.display = 'block';
                         
                         try {
                             const encodedUrl = btoa(encodeURIComponent(url));
                             window.location.href = '/watch?url=' + encodedUrl;
                         } catch (error) {
-                            notification.textContent = 'Invalid URL format';
-                            notification.classList.add('show');
-                            setTimeout(() => {
-                                notification.classList.remove('show');
-                            }, 3000);
+                            showError('Invalid URL format');
+                            loadingOverlay.style.display = 'none';
                             loadingAnimation.style.display = 'none';
                         }
                     });
 
-                    // Auto-focus input on page load
+                    function showError(message) {
+                        const existingError = document.querySelector('.error-popup');
+                        if (existingError) {
+                            existingError.remove();
+                        }
+
+                        const errorPopup = document.createElement('div');
+                        errorPopup.className = 'error-popup';
+                        errorPopup.textContent = message;
+                        document.body.appendChild(errorPopup);
+
+                        setTimeout(() => {
+                            errorPopup.remove();
+                        }, 3000);
+                    }
+
                     input.focus();
                 });
             </script>
@@ -911,201 +869,101 @@ app.get('/watch', async (req, res) => {
     try {
         const encodedUrl = req.query.url;
         if (!encodedUrl) {
-            return res.redirect('/');
+            return res.status(400).send('URL parameter is required');
         }
 
-        const targetUrl = normalizeUrl(decodeURIComponent(atob(encodedUrl)));
+        const url = deobfuscateUrl(encodedUrl);
+        const normalizedUrl = normalizeUrl(url);
         
-        // Check cache
-        const cachedResponse = cache.get(targetUrl);
+        const cachedResponse = cache.get(normalizedUrl);
         if (cachedResponse) {
             return res.send(cachedResponse);
         }
 
-        const response = await fetch(targetUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
-            }
+        const response = await fetch(normalizedUrl, {
+            agent: new https.Agent({
+                rejectUnauthorized: false,
+                secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT
+            })
         });
 
         const contentType = response.headers.get('content-type') || '';
+        const isProcessableType = PROCESSABLE_TYPES.some(type => contentType.includes(type));
 
-        // Handle different content types
-        if (contentType.includes('html')) {
-            const html = await response.text();
-            const transformedHtml = ContentTransformer.transformHtml(html, targetUrl);
-            cache.set(targetUrl, transformedHtml);
-            res.send(transformedHtml);
-        } 
-        else if (contentType.includes('javascript')) {
-            const js = await response.text();
-            const transformedJs = ContentTransformer.transformJavaScript(js);
-            res.set('Content-Type', 'application/javascript');
-            res.send(transformedJs);
-        } 
-        else if (contentType.includes('css')) {
-            const css = await response.text();
-            const transformedCss = ContentTransformer.transformCss(css, targetUrl);
-            res.set('Content-Type', 'text/css');
-            res.send(transformedCss);
-        } 
-        else {
-            // Direct proxy for other content types
-            res.set('Content-Type', contentType);
+        if (!isProcessableType) {
             response.body.pipe(res);
+            return;
         }
+
+        let content = await response.text();
+
+        if (contentType.includes('text/html')) {
+            content = ContentTransformer.transformHtml(content, normalizedUrl);
+        } else if (contentType.includes('text/css')) {
+            content = ContentTransformer.transformCss(content, normalizedUrl);
+        } else if (contentType.includes('javascript')) {
+            content = ContentTransformer.transformJavaScript(content);
+        }
+
+        cache.set(normalizedUrl, content);
+        res.send(content);
+
     } catch (error) {
         DEBUG && console.error('Proxy error:', error);
-        res.status(503).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>BlissFly Error</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        background: #f5f5f5;
-                    }
-                    .error-container {
-                        background: white;
-                        padding: 2rem;
-                        border-radius: 10px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                        text-align: center;
-                        max-width: 500px;
-                        width: 90%;
-                    }
-                    .error-title {
-                        color: #2196F3;
-                        margin-bottom: 1rem;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        gap: 0.5rem;
-                    }
-                    .error-message {
-                        color: #ff4444;
-                        margin: 1rem 0;
-                    }
-                    .button {
-                        background: #2196F3;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 5px;
-                        cursor: pointer;
-                        transition: background 0.3s ease;
-                        text-decoration: none;
-                        display: inline-block;
-                        margin: 5px;
-                    }
-                    .button:hover {
-                        background: #1976D2;
-                    }
-                    .fly-animation {
-                        animation: fly 2s infinite;
-                    }
-                    @keyframes fly {
-                        0%, 100% { transform: translate(0, 0); }
-                        50% { transform: translate(5px, -5px); }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="error-container">
-                    <h2 class="error-title">BlissFly <span class="fly-animation">🪰</span></h2>
-                    <p class="error-message">${error.message}</p>
-                    <button class="button" onclick="window.location.reload()">Try Again</button>
-                    <a href="/" class="button">Return Home</a>
-                </div>
-            </body>
-            </html>
+        res.status(500).send(`
+            <div style="
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: linear-gradient(135deg, #ff4444, #ff6b6b);
+                color: white;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
+                text-align: center;
+                font-family: sans-serif;
+            ">
+                <h2>Error Loading Page</h2>
+                <p>${error.message}</p>
+                <button onclick="window.location.href='/'" style="
+                    background: white;
+                    color: #ff4444;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 5px;
+                    margin-top: 15px;
+                    cursor: pointer;
+                ">Return Home</button>
+            </div>
         `);
     }
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    DEBUG && console.error('Global error:', err);
-    res.status(500).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>BlissFly Error</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    margin: 0;
-                    background: #f5f5f5;
-                }
-                .error-container {
-                    background: white;
-                    padding: 2rem;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    text-align: center;
-                    max-width: 500px;
-                    width: 90%;
-                }
-                .error-title {
-                    color: #2196F3;
-                    margin-bottom: 1rem;
-                }
-                .button {
-                    background: #2196F3;
-                    color: white;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    transition: background 0.3s ease;
-                    text-decoration: none;
-                    display: inline-block;
-                    margin: 5px;
-                }
-                .button:hover {
-                    background: #1976D2;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="error-container">
-                <h2 class="error-title">BlissFly 🪰</h2>
-                <p>An unexpected error occurred</p>
-                <button class="button" onclick="window.location.reload()">Try Again</button>
-                <a href="/" class="button">Return Home</a>
-            </div>
-        </body>
-        </html>
-    `);
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        version: VERSION,
+        cacheStats: cache.getStats(),
+        uptime: process.uptime()
+    });
 });
 
 // Start server
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`BlissFly 🪰 proxy running on port ${PORT}`);
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
     console.log(`Version: ${VERSION}`);
-    console.log(`WebSocket server active`);
-    DEBUG && console.log('Debug mode enabled');
+    if (DEBUG) console.log('Debug mode enabled');
 });
 
-// Maintenance tasks
-setInterval(() => {
-    cache.clear();
-    DEBUG && console.log('Cache cleared');
-}, 3600000); // Clear cache every hour
+// Error handling
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    if (!DEBUG) process.exit(1);
+});
 
-module.exports = app;
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    if (!DEBUG) process.exit(1);
+});
