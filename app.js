@@ -301,9 +301,6 @@ class WebSocketManager {
     }
 
 // Initialize main application components
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 const cache = new AdvancedCache({
     maxSize: MAX_CACHE_SIZE,
     maxAge: CACHE_TTL
