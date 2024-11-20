@@ -300,12 +300,6 @@ class WebSocketManager {
         }
     }
 
-// Initialize main application components
-const cache = new AdvancedCache({
-    maxSize: MAX_CACHE_SIZE,
-    maxAge: CACHE_TTL
-});
-
 // URL utilities
 const normalizeUrl = (url) => {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
