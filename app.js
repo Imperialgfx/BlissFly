@@ -552,7 +552,7 @@ app.get('/', (req, res) => {
                     }
 
                     try {
-                        const encodedUrl = btoa(encodeURIComponent(`https://${url}`));
+                        const encodedUrl = btoa(encodeURIComponent('https://' + url));
                         window.location.href = '/watch?url=' + encodedUrl;
                     } catch (error) {
                         showError('Invalid URL format');
