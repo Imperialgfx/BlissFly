@@ -8,8 +8,6 @@ const WebSocket = require('ws');
 const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
-const path = require('path');
-const fs = require('fs');
 
 // Core Configuration
 const PORT = process.env.PORT || 10000;
@@ -19,40 +17,17 @@ const MAX_RETRIES = 3;
 const TIMEOUT = 30000;
 const MAX_CACHE_SIZE = 1000;
 const CACHE_TTL = 600000;
-const MAX_REDIRECTS = 5;
-
-// Content Types and Security Headers
-const PROCESSABLE_TYPES = [
-    'text/html',
-    'text/css',
-    'application/javascript',
-    'text/javascript',
-    'application/json',
-    'text/plain',
-    'application/xml',
-    'text/xml'
-];
-
-const SECURITY_HEADERS = {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'SAMEORIGIN',
-    'X-XSS-Protection': '1; mode=block',
-    'Referrer-Policy': 'no-referrer',
-    'X-DNS-Prefetch-Control': 'on',
-    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains'
-};
 
 // Initialize Express and Server
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Enhanced Cache Implementation
+// Cache Implementation
 class AdvancedCache {
     constructor(options = {}) {
         this.storage = new Map();
@@ -106,7 +81,6 @@ class AdvancedCache {
     }
 }
 
-// Initialize Cache
 const cache = new AdvancedCache();
 
 // Content Transformer
@@ -146,7 +120,6 @@ class ContentTransformer {
     }
 
     static transformJs(js, baseUrl) {
-        // Basic JS transformation
         return js.replace(/(['"])(https?:\/\/[^'"]+)(['"])/g, (match, q1, url, q2) => {
             const encodedUrl = Buffer.from(url).toString('base64');
             return `${q1}/proxy?url=${encodedUrl}${q2}`;
@@ -154,7 +127,7 @@ class ContentTransformer {
     }
 }
 
-// Main route handlers
+// Main route handler
 app.get('/', (req, res) => {
     const htmlContent = `<!DOCTYPE html>
     <html lang="en">
@@ -208,80 +181,11 @@ app.get('/', (req, res) => {
                 padding: 2rem;
                 box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
                 position: relative;
-                transition: transform 0.3s ease;
-                transform-style: preserve-3d;
-                pointer-events: none;
-            }
-
-            .proxy-card::after {
-                content: '';
-                position: absolute;
-                bottom: -20px;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 100%;
-                height: 20px;
-                border-radius: 50%;
-                background: var(--poop-shadow);
-                opacity: 0;
                 transition: all 0.3s ease;
-                filter: blur(8px);
-            }
-
-            .poop-splotch {
-                position: absolute;
-                background: var(--poop-color);
-                border-radius: 50%;
-                opacity: 0;
-                transform: scale(0);
-                transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                pointer-events: none;
-            }
-
-            .poop-splotch.active {
-                opacity: 0.6;
-                transform: scale(1);
-            }
-
-            .splotch-fly {
-                position: absolute;
-                font-size: 12px;
-                animation: flyBuzz 2s infinite;
-            }
-
-            @keyframes flyBuzz {
-                0%, 100% { transform: translate(0, 0) rotate(0deg); }
-                25% { transform: translate(3px, -3px) rotate(10deg); }
-                50% { transform: translate(-2px, -5px) rotate(-15deg); }
-                75% { transform: translate(-4px, 2px) rotate(5deg); }
-            }
-
-            .mouse-fly {
-                position: fixed;
-                width: 20px;
-                height: 20px;
-                pointer-events: none;
-                z-index: 1000;
-                transition: transform 0.1s ease;
-            }
-
-            .fly-particle {
-                position: fixed;
-                width: 4px;
-                height: 4px;
-                background: rgba(0, 255, 0, 0.3);
-                border-radius: 50%;
-                pointer-events: none;
-                animation: particleFade 1s ease-out forwards;
-            }
-
-            @keyframes particleFade {
-                0% { transform: scale(1); opacity: 0.6; }
-                100% { transform: scale(0); opacity: 0; }
+                transform-style: preserve-3d;
             }
 
             .proxy-form {
-                pointer-events: auto;
                 position: relative;
                 z-index: 2;
                 display: flex;
@@ -341,10 +245,64 @@ app.get('/', (req, res) => {
                 50% { transform: translate(5px, -5px); }
             }
 
+            .poop-splotch {
+                position: absolute;
+                background: var(--poop-color);
+                border-radius: 50%;
+                opacity: 0;
+                transform: scale(0);
+                transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                pointer-events: none;
+                z-index: 1;
+            }
+
+            .poop-splotch.active {
+                opacity: 0.6;
+                transform: scale(1);
+            }
+
+            .splotch-fly {
+                position: absolute;
+                font-size: 12px;
+                animation: flyBuzz 2s infinite;
+                z-index: 2;
+            }
+
+            @keyframes flyBuzz {
+                0%, 100% { transform: translate(0, 0) rotate(0deg); }
+                25% { transform: translate(3px, -3px) rotate(10deg); }
+                50% { transform: translate(-2px, -5px) rotate(-15deg); }
+                75% { transform: translate(-4px, 2px) rotate(5deg); }
+            }
+
+            .mouse-fly {
+                position: fixed;
+                width: 20px;
+                height: 20px;
+                pointer-events: none;
+                z-index: 1000;
+                transition: transform 0.1s ease;
+            }
+
+            .fly-particle {
+                position: fixed;
+                width: 4px;
+                height: 4px;
+                background: rgba(0, 255, 0, 0.3);
+                border-radius: 50%;
+                pointer-events: none;
+                animation: particleFade 1s ease-out forwards;
+            }
+
+            @keyframes particleFade {
+                0% { transform: scale(1); opacity: 0.6; }
+                100% { transform: scale(0); opacity: 0; }
+            }
+
             .info-warning {
                 background: linear-gradient(135deg, #f8f9fa, #e9ecef);
                 border: 1px solid #dee2e6;
-                border-radius: 10px;
+                border-radius: 10px 10px 0 0;
                 padding: 15px;
                 margin-top: 20px;
                 cursor: pointer;
@@ -352,6 +310,7 @@ app.get('/', (req, res) => {
                 align-items: center;
                 justify-content: space-between;
                 transition: all 0.3s ease;
+                user-select: none;
             }
 
             .info-content {
@@ -365,6 +324,8 @@ app.get('/', (req, res) => {
                 transform: scaleY(0);
                 opacity: 0;
                 transition: all 0.3s ease;
+                position: relative;
+                z-index: 1;
             }
 
             .info-content.active {
@@ -445,10 +406,10 @@ app.get('/', (req, res) => {
                     splotch.className = 'poop-splotch';
                     const size = 20 + (intensity * 30);
                     
-                    splotch.style.width = \`\${size}px\`;
-                    splotch.style.height = \`\${size}px\`;
-                    splotch.style.left = \`\${x}px\`;
-                    splotch.style.top = \`\${y}px\`;
+                    splotch.style.width = `${size}px`;
+                    splotch.style.height = `${size}px`;
+                    splotch.style.left = `${x}px`;
+                    splotch.style.top = `${y}px`;
                     
                     // Add flies to splotch
                     const flyCount = Math.floor(intensity * 3) + 1;
@@ -456,8 +417,8 @@ app.get('/', (req, res) => {
                         const fly = document.createElement('span');
                         fly.className = 'splotch-fly';
                         fly.innerHTML = '🪰';
-                        fly.style.left = \`\${Math.random() * size}px\`;
-                        fly.style.top = \`\${Math.random() * size}px\`;
+                        fly.style.left = `${Math.random() * size}px`;
+                        fly.style.top = `${Math.random() * size}px`;
                         splotch.appendChild(fly);
                     }
 
@@ -476,8 +437,8 @@ app.get('/', (req, res) => {
                 function createParticle(x, y) {
                     const particle = document.createElement('div');
                     particle.className = 'fly-particle';
-                    particle.style.left = \`\${x}px\`;
-                    particle.style.top = \`\${y}px\`;
+                    particle.style.left = `${x}px`;
+                    particle.style.top = `${y}px`;
                     document.body.appendChild(particle);
                     
                     setTimeout(() => particle.remove(), 1000);
@@ -507,15 +468,14 @@ app.get('/', (req, res) => {
                     
                     const intensity = Math.min(distance / maxDistance, 1);
                     
-                    proxyCard.style.transform = \`
+                    proxyCard.style.transform = `
                         perspective(1000px) 
-                        rotateX(\${tiltX}deg) 
-                        rotateY(\${tiltY}deg)
-                    \`;
+                        rotateX(${tiltX}deg) 
+                        rotateY(${tiltY}deg)
+                    `;
 
                     // Update shadow intensity
-                    proxyCard.style.setProperty('--shadow-intensity', intensity);
-                    proxyCard.style.boxShadow = \`0 \${4 + (intensity * 8)}px \${6 + (intensity * 12)}px rgba(139, 69, 19, \${intensity * 0.4})\`;
+                    proxyCard.style.boxShadow = `0 ${4 + (intensity * 8)}px ${6 + (intensity * 12)}px rgba(139, 69, 19, ${intensity * 0.4})`;
                     
                     // Create splotches based on tilt intensity
                     if(intensity > 0.5 && Math.random() < 0.03) {
@@ -525,7 +485,7 @@ app.get('/', (req, res) => {
                     }
 
                     // Update fly follower
-                    flyFollower.style.transform = \`translate(\${e.clientX - 10}px, \${e.clientY - 10}px)\`;
+                    flyFollower.style.transform = `translate(${e.clientX - 10}px, ${e.clientY - 10}px)`;
                     if(Math.random() < 0.1) createParticle(e.clientX, e.clientY);
                 });
 
@@ -539,7 +499,7 @@ app.get('/', (req, res) => {
                     splotches.length = 0;
                 });
 
-                // Form submission
+                // Form submission with proper URL handling
                 form.addEventListener('submit', async (e) => {
                     e.preventDefault();
                     let url = input.value.trim();
@@ -552,14 +512,14 @@ app.get('/', (req, res) => {
                     }
 
                     try {
-                        const encodedUrl = btoa(encodeURIComponent('https://' + url));
+                        const encodedUrl = Buffer.from('https://' + url).toString('base64');
                         window.location.href = '/watch?url=' + encodedUrl;
                     } catch (error) {
                         showError('Invalid URL format');
                     }
                 });
 
-                // Info warning dropdown
+                // Info warning dropdown functionality
                 infoWarning.addEventListener('click', () => {
                     infoContent.classList.toggle('active');
                     dropdownArrow.style.transform = 
@@ -577,6 +537,7 @@ app.get('/', (req, res) => {
                     document.body.appendChild(errorPopup);
                 }
 
+                // Auto-focus input on page load
                 input.focus();
             });
         </script>
@@ -586,7 +547,6 @@ app.get('/', (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(htmlContent);
 });
-
 // Watch route handler
 app.get('/watch', async (req, res) => {
     try {
@@ -603,7 +563,16 @@ app.get('/watch', async (req, res) => {
         });
 
         const contentType = response.headers.get('content-type') || '';
-        const isProcessableType = PROCESSABLE_TYPES.some(type => contentType.includes(type));
+        const isProcessableType = [
+            'text/html',
+            'text/css',
+            'application/javascript',
+            'text/javascript',
+            'application/json',
+            'text/plain',
+            'application/xml',
+            'text/xml'
+        ].some(type => contentType.includes(type));
 
         if (!isProcessableType) {
             response.body.pipe(res);
@@ -621,54 +590,7 @@ app.get('/watch', async (req, res) => {
     }
 });
 
-// Start server
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Version: ${VERSION}`);
-    if (DEBUG) console.log('Debug mode enabled');
-});
-
-// Error handling
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    if (!DEBUG) process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    if (!DEBUG) process.exit(1);
-});
-
-// WebSocket handling
-wss.on('connection', (ws) => {
-    ws.on('message', async (message) => {
-        try {
-            const data = JSON.parse(message);
-            switch (data.type) {
-                case 'proxy_request':
-                    const response = await handleProxyRequest(data.url);
-                    ws.send(JSON.stringify({
-                        type: 'proxy_response',
-                        data: response
-                    }));
-                    break;
-                case 'ping':
-                    ws.send(JSON.stringify({
-                        type: 'pong',
-                        timestamp: Date.now()
-                    }));
-                    break;
-            }
-        } catch (error) {
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: error.message
-            }));
-        }
-    });
-});
-
-// Additional route handlers
+// Proxy route handler
 app.get('/proxy', async (req, res) => {
     try {
         const { url } = req.query;
@@ -708,75 +630,48 @@ app.get('/proxy', async (req, res) => {
     }
 });
 
-// API endpoints
-app.get('/api/stats', (req, res) => {
-    res.json({
-        version: VERSION,
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        cache: cache.stats
+// WebSocket handling for real-time updates
+wss.on('connection', (ws) => {
+    ws.on('message', async (message) => {
+        try {
+            const data = JSON.parse(message);
+            switch (data.type) {
+                case 'proxy_request':
+                    const response = await handleProxyRequest(data.url);
+                    ws.send(JSON.stringify({
+                        type: 'proxy_response',
+                        data: response
+                    }));
+                    break;
+                case 'ping':
+                    ws.send(JSON.stringify({
+                        type: 'pong',
+                        timestamp: Date.now()
+                    }));
+                    break;
+            }
+        } catch (error) {
+            ws.send(JSON.stringify({
+                type: 'error',
+                message: error.message
+            }));
+        }
     });
 });
-
-app.post('/api/clear-cache', (req, res) => {
-    cache.storage.clear();
-    cache.stats = {
-        hits: 0,
-        misses: 0,
-        evictions: 0,
-        totalRequests: 0
-    };
-    res.json({ message: 'Cache cleared successfully' });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Something broke!');
-});
-
-app.use((req, res) => {
-    res.status(404).send('Not Found');
-});
-
-// Helper functions
-async function handleProxyRequest(url) {
-    try {
-        const response = await fetch(url);
-        const contentType = response.headers.get('content-type');
-        const content = await response.text();
-
-        return {
-            status: response.status,
-            headers: Object.fromEntries(response.headers),
-            content: await ContentTransformer.transform(content, contentType, url)
-        };
-    } catch (error) {
-        throw new Error(`Failed to proxy request: ${error.message}`);
-    }
-}
-
-function sanitizeUrl(url) {
-    try {
-        const parsed = new URL(url);
-        return parsed.href;
-    } catch {
-        throw new Error('Invalid URL format');
-    }
-}
 
 // Security middleware
 app.use((req, res, next) => {
-    Object.entries(SECURITY_HEADERS).forEach(([header, value]) => {
-        res.setHeader(header, value);
-    });
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     next();
 });
 
-// Rate limiting
+// Rate limiting implementation
 const rateLimit = {
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    max: 100
 };
 
 const limiter = new Map();
@@ -802,171 +697,204 @@ app.use((req, res, next) => {
     next();
 });
 
-// Cleanup old rate limit entries
-setInterval(() => {
-    const now = Date.now();
-    const windowStart = now - rateLimit.windowMs;
-    
-    for (const [ip, requests] of limiter.entries()) {
-        const recentRequests = requests.filter(time => time > windowStart);
-        if (recentRequests.length === 0) {
-            limiter.delete(ip);
-        } else {
-            limiter.set(ip, recentRequests);
-        }
-    }
-}, 60000); // Clean up every minute
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).send('Something broke!');
+});
 
-// Export for testing
-module.exports = {
-    app,
-    server,
-    cache,
-    ContentTransformer,
-    handleProxyRequest,
-    sanitizeUrl
-};
+// Helper function for proxy requests
+async function handleProxyRequest(url) {
+    try {
+        const response = await fetch(url);
+        const contentType = response.headers.get('content-type');
+        const content = await response.text();
 
-// Advanced caching mechanisms and performance monitoring
-const performanceMetrics = {
-    requestTiming: new Map(),
-    cachingEfficiency: {
-        hits: 0,
-        misses: 0,
-        efficiency: () => {
-            const total = this.hits + this.misses;
-            return total ? (this.hits / total) * 100 : 0;
-        }
-    }
-};
-
-// Extended content transformation rules
-const transformationRules = {
-    javascript: {
-        inlineScripts: true,
-        removeComments: true,
-        minify: process.env.NODE_ENV === 'production'
-    },
-    css: {
-        inlineStyles: true,
-        compressImages: true,
-        optimizeSelectors: true
-    },
-    html: {
-        removeWhitespace: true,
-        optimizeImages: true,
-        lazyLoading: true
-    }
-};
-
-// Monitoring system
-class PerformanceMonitor {
-    constructor() {
-        this.metrics = new Map();
-        this.startTime = Date.now();
-    }
-
-    track(metric, value) {
-        if (!this.metrics.has(metric)) {
-            this.metrics.set(metric, []);
-        }
-        this.metrics.get(metric).push({
-            value,
-            timestamp: Date.now()
-        });
-    }
-
-    getMetrics() {
-        return Object.fromEntries(this.metrics);
-    }
-
-    getUptime() {
-        return Date.now() - this.startTime;
+        return {
+            status: response.status,
+            headers: Object.fromEntries(response.headers),
+            content: await ContentTransformer.transform(content, contentType, url)
+        };
+    } catch (error) {
+        throw new Error(`Failed to proxy request: ${error.message}`);
     }
 }
 
-const monitor = new PerformanceMonitor();
+// Advanced content processing and security features
+const contentProcessing = {
+    // HTML sanitization and processing
+    sanitizeHtml: (content) => {
+        return content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                     .replace(/on\w+="[^"]*"/gi, '')
+                     .replace(/javascript:/gi, '');
+    },
 
-// Enhanced security layer
-const securityEnhancements = {
-    rateLimit: {
-        windowMs: 15 * 60 * 1000,
-        max: 100,
-        message: 'Too many requests from this IP'
-    },
-    cors: {
-        origin: '*',
-        methods: ['GET', 'POST'],
-        allowedHeaders: ['Content-Type', 'Authorization']
-    },
-    helmet: {
-        contentSecurityPolicy: {
-            directives: {
-                defaultSrc: ["'self'"],
-                scriptSrc: ["'self'", "'unsafe-inline'"],
-                styleSrc: ["'self'", "'unsafe-inline'"],
-                imgSrc: ["'self'", 'data:', 'https:'],
-                connectSrc: ["'self'"],
-            }
+    // Resource optimization
+    optimizeResources: async (content, type) => {
+        switch(type) {
+            case 'text/html':
+                return content.replace(/\s+/g, ' ')
+                             .replace(/>\s+</g, '><');
+            case 'text/css':
+                return content.replace(/\s+/g, ' ')
+                             .replace(/:\s+/g, ':')
+                             .replace(/;\s+/g, ';');
+            case 'application/javascript':
+                return content.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '');
+            default:
+                return content;
         }
+    },
+
+    // Enhanced security headers
+    addSecurityHeaders: (res) => {
+        const headers = {
+            'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *;",
+            'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+            'Cross-Origin-Embedder-Policy': 'require-corp',
+            'Cross-Origin-Opener-Policy': 'same-origin',
+            'Cross-Origin-Resource-Policy': 'cross-origin'
+        };
+        Object.entries(headers).forEach(([key, value]) => res.setHeader(key, value));
     }
 };
 
-// Utility functions for performance optimization
-const optimizationUtils = {
-    compressResponse: (data, type) => {
-        return new Promise((resolve) => {
-            if (typeof data !== 'string') {
-                resolve(data);
-                return;
-            }
-            zlib.gzip(data, (_, result) => resolve(result));
+// Enhanced error handling and monitoring
+const errorHandler = {
+    errors: [],
+    maxErrors: 100,
+
+    log: function(error, context = {}) {
+        const errorLog = {
+            timestamp: new Date(),
+            error: error.message,
+            stack: error.stack,
+            context
+        };
+        
+        this.errors.unshift(errorLog);
+        if (this.errors.length > this.maxErrors) {
+            this.errors.pop();
+        }
+        
+        console.error(`[${errorLog.timestamp.toISOString()}] Error:`, error.message);
+    },
+
+    getStats: function() {
+        return {
+            total: this.errors.length,
+            recent: this.errors.slice(0, 10),
+            categories: this.categorizeErrors()
+        };
+    },
+
+    categorizeErrors: function() {
+        return this.errors.reduce((acc, error) => {
+            const type = error.error.includes('ECONNREFUSED') ? 'connection' :
+                        error.error.includes('404') ? 'notFound' :
+                        error.error.includes('timeout') ? 'timeout' : 'other';
+            acc[type] = (acc[type] || 0) + 1;
+            return acc;
+        }, {});
+    }
+};
+
+// Performance monitoring
+const performanceMonitor = {
+    metrics: new Map(),
+    
+    start: function(id) {
+        this.metrics.set(id, {
+            start: process.hrtime(),
+            marks: new Map()
         });
     },
 
-    deduplicateRequests: (() => {
-        const pending = new Map();
-        return async (key, requestFn) => {
-            if (pending.has(key)) {
-                return pending.get(key);
-            }
-            const promise = requestFn();
-            pending.set(key, promise);
-            try {
-                return await promise;
-            } finally {
-                pending.delete(key);
-            }
-        };
-    })(),
+    mark: function(id, markName) {
+        const metric = this.metrics.get(id);
+        if (metric) {
+            metric.marks.set(markName, process.hrtime(metric.start));
+        }
+    },
 
-    optimizeImages: async (buffer, options = {}) => {
-        const Sharp = require('sharp');
-        return Sharp(buffer)
-            .resize(options.width || 800)
-            .jpeg({ quality: options.quality || 80 })
-            .toBuffer();
+    end: function(id) {
+        const metric = this.metrics.get(id);
+        if (metric) {
+            const duration = process.hrtime(metric.start);
+            this.metrics.delete(id);
+            return {
+                duration: duration[0] * 1e3 + duration[1] / 1e6,
+                marks: Object.fromEntries(metric.marks)
+            };
+        }
+    },
+
+    getStats: function() {
+        return {
+            activeMetrics: this.metrics.size,
+            marks: Array.from(this.metrics.values())
+                       .flatMap(m => Array.from(m.marks.entries()))
+                       .reduce((acc, [name, time]) => {
+                           if (!acc[name]) acc[name] = [];
+                           acc[name].push(time[0] * 1e3 + time[1] / 1e6);
+                           return acc;
+                       }, {})
+        };
     }
 };
 
-// Apply all enhancements to the main application
-app.use((req, res, next) => {
-    const requestStart = Date.now();
-    
-    res.on('finish', () => {
-        const duration = Date.now() - requestStart;
-        monitor.track('requestDuration', duration);
-    });
-    
+// URL processing and validation
+const urlProcessor = {
+    sanitize: (url) => {
+        return url.replace(/[^\w\s-.:/?#[\]@!$&'()*+,;=]/gi, '');
+    },
+
+    validate: (url) => {
+        try {
+            new URL(url.startsWith('http') ? url : `https://${url}`);
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
+    normalizeUrl: (url) => {
+        if (!url.match(/^[a-zA-Z]+:\/\//)) {
+            url = 'https://' + url;
+        }
+        return url;
+    }
+};
+
+// Apply middleware for content processing
+app.use(async (req, res, next) => {
+    const originalSend = res.send;
+    res.send = function(data) {
+        performanceMonitor.start(req.id);
+        
+        if (typeof data === 'string') {
+            data = contentProcessing.sanitizeHtml(data);
+        }
+        
+        contentProcessing.addSecurityHeaders(res);
+        performanceMonitor.end(req.id);
+        
+        return originalSend.call(this, data);
+    };
     next();
 });
 
-// Export enhanced modules
+// Export utilities for testing
 module.exports = {
-    ...module.exports,
-    performanceMetrics,
-    transformationRules,
-    monitor,
-    securityEnhancements,
-    optimizationUtils
+    contentProcessing,
+    errorHandler,
+    performanceMonitor,
+    urlProcessor
 };
+
+// Start server
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Version: ${VERSION}`);
+    if (DEBUG) console.log('Debug mode enabled');
+});
