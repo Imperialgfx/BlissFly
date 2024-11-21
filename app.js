@@ -406,10 +406,10 @@ app.get('/', (req, res) => {
                     splotch.className = 'poop-splotch';
                     const size = 20 + (intensity * 30);
                     
-                    splotch.style.width = `${size}px`;
-                    splotch.style.height = `${size}px`;
-                    splotch.style.left = `${x}px`;
-                    splotch.style.top = `${y}px`;
+                    splotch.style.width = size + 'px';
+                    splotch.style.height = size + 'px';
+                    splotch.style.left = x + 'px';
+                    splotch.style.top = y + 'px';
                     
                     // Add flies to splotch
                     const flyCount = Math.floor(intensity * 3) + 1;
@@ -417,8 +417,8 @@ app.get('/', (req, res) => {
                         const fly = document.createElement('span');
                         fly.className = 'splotch-fly';
                         fly.innerHTML = '🪰';
-                        fly.style.left = `${Math.random() * size}px`;
-                        fly.style.top = `${Math.random() * size}px`;
+                        fly.style.left = (Math.random() * size) + 'px';
+                        fly.style.top = (Math.random() * size) + 'px';
                         splotch.appendChild(fly);
                     }
 
@@ -437,8 +437,8 @@ app.get('/', (req, res) => {
                 function createParticle(x, y) {
                     const particle = document.createElement('div');
                     particle.className = 'fly-particle';
-                    particle.style.left = `${x}px`;
-                    particle.style.top = `${y}px`;
+                    particle.style.left = x + 'px';
+                    particle.style.top = y + 'px';
                     document.body.appendChild(particle);
                     
                     setTimeout(() => particle.remove(), 1000);
@@ -468,14 +468,10 @@ app.get('/', (req, res) => {
                     
                     const intensity = Math.min(distance / maxDistance, 1);
                     
-                    proxyCard.style.transform = `
-                        perspective(1000px) 
-                        rotateX(${tiltX}deg) 
-                        rotateY(${tiltY}deg)
-                    `;
+                    proxyCard.style.transform = 'perspective(1000px) rotateX(' + tiltX + 'deg) rotateY(' + tiltY + 'deg)';
 
                     // Update shadow intensity
-                    proxyCard.style.boxShadow = `0 ${4 + (intensity * 8)}px ${6 + (intensity * 12)}px rgba(139, 69, 19, ${intensity * 0.4})`;
+                    proxyCard.style.boxShadow = '0 ' + (4 + (intensity * 8)) + 'px ' + (6 + (intensity * 12)) + 'px rgba(139, 69, 19, ' + (intensity * 0.4) + ')';
                     
                     // Create splotches based on tilt intensity
                     if(intensity > 0.5 && Math.random() < 0.03) {
@@ -485,7 +481,7 @@ app.get('/', (req, res) => {
                     }
 
                     // Update fly follower
-                    flyFollower.style.transform = `translate(${e.clientX - 10}px, ${e.clientY - 10}px)`;
+                    flyFollower.style.transform = 'translate(' + (e.clientX - 10) + 'px, ' + (e.clientY - 10) + 'px)';
                     if(Math.random() < 0.1) createParticle(e.clientX, e.clientY);
                 });
 
