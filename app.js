@@ -21,6 +21,7 @@ const CACHE_TTL = 600000;
 // Initialize Express and Server
 const app = express();
 const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 // Middleware
 app.use(cors());
