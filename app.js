@@ -89,13 +89,15 @@ class AdvancedCache {
             ...this.stats,
             size: this.storage.size,
             hitRate: (this.stats.hits / (this.stats.hits + this.stats.misses)) * 100
-
         };
+    }
+
     clear() {
         this.storage.clear();
         this.stats.evictions += this.storage.size;
         console.log('Cache cleared');
     }
+
 }
 
 // Initialize cache
