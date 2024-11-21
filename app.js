@@ -9,11 +9,6 @@ const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
 
-// Initialize express and server
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
 // Consts and Cfgs
 const PORT = process.env.PORT || 10000;
 const VERSION = 'v1.21';
@@ -230,75 +225,16 @@ class WebSocketManager {
             });
         }
     }
+}
 
-    initializeGame(clientId, data) {
-        const gameState = {
-            id: data.gameId || this.generateClientId(),
-            type: data.gameType,
-            state: data.initialState || {},
-            timestamp: Date.now(),
-            players: new Set([clientId]),
-            settings: data.settings || {}
-        };
-        
-        this.gameStates.set(gameState.id, gameState);
-        this.clients.get(clientId).gameState = gameState.id;
-        
-        this.sendToClient(clientId, {
-            type: WS_MESSAGES.GAME_INIT,
-            gameState: this.sanitizeGameState(gameState)
-        });
-    }
-
-    updateGameState(clientId, data) {
-        const gameId = this.clients.get(clientId)?.gameState;
-        const gameState = this.gameStates.get(gameId);
-
-        if (gameState && gameState.players.has(clientId)) {
-            Object.assign(gameState.state, data.state);
-            gameState.timestamp = Date.now();
-            this.broadcastGameState(gameId);
-        }
-    }
-
-    handleGameAction(clientId, data) {
-        const gameId = this.clients.get(clientId)?.gameState;
-        const gameState = this.gameStates.get(gameId);
-
-        if (gameState && gameState.players.has(clientId)) {
-            const actionResult = this.processGameAction(gameState, data.action);
-            this.broadcastToGame(gameId, {
-                type: 'actionProcessed',
-                action: data.action,
-                result: actionResult,
-                timestamp: Date.now()
-            });
-        }
-    }
-
-    sanitizeGameState(gameState) {
-        return {
-            id: gameState.id,
-            type: gameState.type,
-            state: gameState.state,
-            timestamp: gameState.timestamp,
-            playerCount: gameState.players.size,
-            settings: gameState.settings
-        };
-    }
-
-    broadcastGameState(gameId) {
-        const gameState = this.gameStates.get(gameId);
-        if (!gameState) return;
-
-        const sanitizedState = this.sanitizeGameState(gameState);
-        for (const playerId of gameState.players) {
-            this.sendToClient(playerId, {
-                type: WS_MESSAGES.GAME_STATE,
-                gameState: sanitizedState
-            });
-        }
-    }
+// Initialize express and core components
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+const cache = new AdvancedCache({
+    maxSize: MAX_CACHE_SIZE,
+    maxAge: CACHE_TTL
+});
 
 // URL utilities
 const normalizeUrl = (url) => {
@@ -401,7 +337,6 @@ class ContentTransformer {
                             }
                         });
                     }
-
                     ws.onmessage = function(event) {
                         try {
                             const data = JSON.parse(event.data);
