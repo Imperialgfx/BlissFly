@@ -96,7 +96,6 @@ class AdvancedCache {
         this.stats.evictions += this.storage.size;
         console.log('Cache cleared');
     }
-
 }
 
 // Initialize cache
