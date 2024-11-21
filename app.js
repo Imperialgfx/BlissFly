@@ -1,3 +1,4 @@
+// imports and dependencies
 const express = require('express');
 const cors = require('cors');
 const https = require('https');
@@ -8,8 +9,10 @@ const WebSocket = require('ws');
 const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
+const path = require('path');
+const fs = require('fs');
 
-// Consts and Cfgs
+// Configuration and Constants
 const PORT = process.env.PORT || 10000;
 const VERSION = 'v1.21';
 const DEBUG = process.env.DEBUG === 'true';
@@ -17,8 +20,10 @@ const MAX_RETRIES = 3;
 const TIMEOUT = 30000;
 const MAX_CACHE_SIZE = 1000;
 const CACHE_TTL = 600000;
+const MAX_REDIRECTS = 5;
+const CHUNK_SIZE = 16384;
 
-// content handling cfgs
+// Content Processing Configurations
 const PROCESSABLE_TYPES = [
     'text/html',
     'text/css',
@@ -28,52 +33,85 @@ const PROCESSABLE_TYPES = [
     'application/json',
     'text/plain',
     'application/xml',
-    'text/xml'
+    'text/xml',
+    'application/x-www-form-urlencoded'
 ];
 
-// WS message types
+const BINARY_TYPES = [
+    'image/',
+    'audio/',
+    'video/',
+    'application/pdf',
+    'application/octet-stream'
+];
+
+const SECURITY_HEADERS = {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'X-XSS-Protection': '1; mode=block',
+    'Referrer-Policy': 'no-referrer',
+    'X-DNS-Prefetch-Control': 'on',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+    'Permissions-Policy': 'interest-cohort=()',
+    'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *;"
+};
+
+// WebSocket Message Types
 const WS_MESSAGES = {
     GAME_INIT: 'gameInit',
     GAME_STATE: 'gameState',
     GAME_ACTION: 'gameAction',
     SYNC: 'sync',
     ERROR: 'error',
-    CONNECTION: 'connection'
+    CONNECTION: 'connection',
+    HEARTBEAT: 'heartbeat',
+    STATE_UPDATE: 'stateUpdate',
+    CLIENT_EVENT: 'clientEvent'
 };
 
+// Enhanced Cache Implementation
 class AdvancedCache {
     constructor(options = {}) {
         this.storage = new Map();
         this.maxSize = options.maxSize || MAX_CACHE_SIZE;
         this.maxAge = options.maxAge || CACHE_TTL;
+        this.compressionThreshold = options.compressionThreshold || 1024;
         this.stats = {
             hits: 0,
             misses: 0,
             evictions: 0,
-            totalRequests: 0
+            totalRequests: 0,
+            compressionRatio: 0,
+            totalSize: 0
         };
         this.lastCleanup = Date.now();
+        this.setupPeriodicCleanup();
     }
 
-    set(key, value, customTTL) {
+    async set(key, value, customTTL) {
         if (this.storage.size >= this.maxSize) {
-            this._evictBatch();
+            await this._evictBatch();
         }
 
         const ttl = customTTL || this.maxAge;
+        const compressed = await this._compressIfNeeded(value);
+        const size = this._calculateSize(compressed);
+
         const item = {
-            value,
+            value: compressed,
             expires: Date.now() + ttl,
             lastAccessed: Date.now(),
             accessCount: 0,
-            size: this._calculateSize(value)
+            size,
+            compressed: compressed !== value
         };
 
         this.storage.set(key, item);
-        this._conditionalCleanup();
+        this.stats.totalSize += size;
+        await this._conditionalCleanup();
     }
 
-    get(key) {
+    async get(key) {
         this.stats.totalRequests++;
         const item = this.storage.get(key);
 
@@ -85,51 +123,110 @@ class AdvancedCache {
         if (Date.now() > item.expires) {
             this.storage.delete(key);
             this.stats.evictions++;
+            this.stats.totalSize -= item.size;
             return null;
         }
 
         item.lastAccessed = Date.now();
         item.accessCount++;
         this.stats.hits++;
-        return item.value;
+
+        return item.compressed ? 
+            await this._decompress(item.value) : 
+            item.value;
+    }
+
+    async _compressIfNeeded(value) {
+        if (typeof value === 'string' && 
+            value.length > this.compressionThreshold) {
+            try {
+                const buffer = Buffer.from(value);
+                const compressed = await new Promise((resolve, reject) => {
+                    zlib.gzip(buffer, (err, result) => {
+                        if (err) reject(err);
+                        else resolve(result);
+                    });
+                });
+                
+                this.stats.compressionRatio = (compressed.length / buffer.length);
+                return compressed;
+            } catch (error) {
+                DEBUG && console.error('Compression error:', error);
+                return value;
+            }
+        }
+        return value;
+    }
+
+    async _decompress(value) {
+        try {
+            const decompressed = await new Promise((resolve, reject) => {
+                zlib.gunzip(value, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
+            });
+            return decompressed.toString();
+        } catch (error) {
+            DEBUG && console.error('Decompression error:', error);
+            return value;
+        }
     }
 
     _calculateSize(value) {
+        if (Buffer.isBuffer(value)) {
+            return value.length;
+        }
         if (typeof value === 'string') {
             return value.length * 2;
         }
-        return 512;
+        return 512; // Default size for other types
     }
 
-    _evictBatch() {
+    async _evictBatch() {
         const itemsToEvict = Math.ceil(this.storage.size * 0.1);
         const sortedItems = Array.from(this.storage.entries())
-            .sort((a, b) => (a[1].lastAccessed - b[1].lastAccessed));
+            .sort((a, b) => {
+                const scoreA = (Date.now() - a[1].lastAccessed) / a[1].accessCount;
+                const scoreB = (Date.now() - b[1].lastAccessed) / b[1].accessCount;
+                return scoreB - scoreA;
+            });
 
         for (let i = 0; i < itemsToEvict; i++) {
             if (sortedItems[i]) {
-                this.storage.delete(sortedItems[i][0]);
+                const [key, item] = sortedItems[i];
+                this.storage.delete(key);
                 this.stats.evictions++;
+                this.stats.totalSize -= item.size;
             }
         }
     }
 
-    _conditionalCleanup() {
+    async _conditionalCleanup() {
         const now = Date.now();
         if (now - this.lastCleanup > 300000) {
-            this._cleanup();
+            await this._cleanup();
             this.lastCleanup = now;
         }
     }
 
-    _cleanup() {
+    async _cleanup() {
         const now = Date.now();
         for (const [key, item] of this.storage.entries()) {
             if (now > item.expires || item.accessCount === 0) {
                 this.storage.delete(key);
                 this.stats.evictions++;
+                this.stats.totalSize -= item.size;
             }
         }
+    }
+
+    setupPeriodicCleanup() {
+        setInterval(() => {
+            this._conditionalCleanup().catch(error => {
+                DEBUG && console.error('Periodic cleanup error:', error);
+            });
+        }, 60000);
     }
 
     getStats() {
@@ -138,149 +235,117 @@ class AdvancedCache {
             size: this.storage.size,
             maxSize: this.maxSize,
             hitRate: (this.stats.hits / this.stats.totalRequests) || 0,
-            evictionRate: (this.stats.evictions / this.stats.totalRequests) || 0
+            evictionRate: (this.stats.evictions / this.stats.totalRequests) || 0,
+            memoryUsage: process.memoryUsage().heapUsed,
+            compressionRatio: this.stats.compressionRatio
         };
     }
 }
 
-class WebSocketManager {
-    constructor(wss) {
-        this.wss = wss;
-        this.clients = new Map();
-        this.gameStates = new Map();
-        this.setupWebSocketServer();
-    }
-
-    setupWebSocketServer() {
-        this.wss.on('connection', (ws, req) => {
-            const clientId = this.generateClientId();
-            this.initializeClient(clientId, ws);
-            this.setupClientHandlers(clientId, ws);
-        });
-    }
-
-    generateClientId() {
-        return crypto.randomBytes(16).toString('hex');
-    }
-
-    initializeClient(clientId, ws) {
-        this.clients.set(clientId, {
-            ws,
-            lastPing: Date.now(),
-            gameState: null,
-            messageQueue: [],
-            isAlive: true
-        });
-
-        this.sendToClient(clientId, {
-            type: WS_MESSAGES.CONNECTION,
-            status: 'established',
-            clientId
-        });
-    }
-
-    setupClientHandlers(clientId, ws) {
-        ws.on('message', (message) => this.handleMessage(clientId, message));
-        ws.on('close', () => this.handleClose(clientId));
-        ws.on('error', (error) => this.handleError(clientId, error));
-        ws.on('pong', () => this.handlePong(clientId));
-
-        const pingInterval = setInterval(() => {
-            if (this.clients.has(clientId)) {
-                this.pingClient(clientId);
-            } else {
-                clearInterval(pingInterval);
-            }
-        }, 30000);
-    }
-
-    handleMessage(clientId, message) {
-        try {
-            const data = JSON.parse(message);
-            const client = this.clients.get(clientId);
-            
-            if (!client) return;
-
-            switch (data.type) {
-                case WS_MESSAGES.GAME_INIT:
-                    this.initializeGame(clientId, data);
-                    break;
-                case WS_MESSAGES.GAME_STATE:
-                    this.updateGameState(clientId, data);
-                    break;
-                case WS_MESSAGES.GAME_ACTION:
-                    this.handleGameAction(clientId, data);
-                    break;
-                case WS_MESSAGES.SYNC:
-                    this.syncGameState(clientId);
-                    break;
-                default:
-                    this.handleCustomMessage(clientId, data);
-            }
-        } catch (error) {
-            DEBUG && console.error('WebSocket message handling error:', error);
-            this.sendToClient(clientId, {
-                type: WS_MESSAGES.ERROR,
-                message: 'Invalid message format'
-            });
+// URL and Content Processing Utilities
+class ContentProcessor {
+    static async transformContent(content, type, baseUrl) {
+        switch(type) {
+            case 'text/html':
+                return await this.transformHtml(content, baseUrl);
+            case 'text/css':
+                return await this.transformCss(content, baseUrl);
+            case 'application/javascript':
+            case 'text/javascript':
+                return await this.transformJavaScript(content, baseUrl);
+            default:
+                return content;
         }
     }
-}
 
-// Initialize express and core components
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-const cache = new AdvancedCache({
-    maxSize: MAX_CACHE_SIZE,
-    maxAge: CACHE_TTL
-});
+    static async transformHtml(html, baseUrl) {
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(html);
 
-// URL utilities
-const normalizeUrl = (url) => {
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        return `https://${url}`;
+        // Base tag handling
+        $('base').remove();
+        $('head').prepend(`<base href="${baseUrl}">`);
+
+        // Transform all URLs in attributes
+        $('[href], [src], [action]').each((_, elem) => {
+            ['href', 'src', 'action'].forEach(attr => {
+                const url = $(elem).attr(attr);
+                if (url && !this.isExcludedUrl(url)) {
+                    try {
+                        const absoluteUrl = new URL(url, baseUrl).href;
+                        const encodedUrl = Buffer.from(absoluteUrl).toString('base64');
+                        $(elem).attr(attr, `/watch?url=${encodedUrl}`);
+                    } catch (e) {
+                        DEBUG && console.error('URL transformation error:', e);
+                    }
+                }
+            });
+        });
+
+        // Transform inline styles
+        $('[style]').each((_, elem) => {
+            const style = $(elem).attr('style');
+            if (style) {
+                $(elem).attr('style', this.transformCss(style, baseUrl));
+            }
+        });
+
+        // Add game support script
+        const gameScript = this.generateGameScript();
+        $('body').append(gameScript);
+
+        return $.html();
     }
-    return url;
-};
 
-const obfuscateUrl = (url) => Buffer.from(url).toString('base64');
-const deobfuscateUrl = (encoded) => Buffer.from(encoded, 'base64').toString('utf8');
+    static transformCss(css, baseUrl) {
+        return css.replace(/url\(['"]?((?!data:)[^'"())]+)['"]?\)/g, (match, url) => {
+            try {
+                const absoluteUrl = new URL(url, baseUrl).href;
+                const encodedUrl = Buffer.from(absoluteUrl).toString('base64');
+                return `url('/watch?url=${encodedUrl}')`;
+            } catch (e) {
+                return match;
+            }
+        });
+    }
 
-// Middleware setup
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+    static async transformJavaScript(js, baseUrl) {
+        const babel = require('@babel/core');
+        const result = await babel.transformAsync(js, {
+            plugins: [
+                () => ({
+                    visitor: {
+                        CallExpression(path) {
+                            if (this.isXHRorFetch(path)) {
+                                this.transformXHRFetch(path, baseUrl);
+                            }
+                        },
+                        NewExpression(path) {
+                            if (this.isWebSocket(path)) {
+                                this.transformWebSocket(path);
+                            }
+                        }
+                    }
+                })
+            ]
+        });
+        return result.code;
+    }
 
-// Security headers middleware
-app.use((req, res, next) => {
-    res.set({
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'SAMEORIGIN',
-        'X-XSS-Protection': '1; mode=block',
-        'Referrer-Policy': 'no-referrer',
-        'X-DNS-Prefetch-Control': 'on',
-        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-        'Permissions-Policy': 'interest-cohort=()',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-    });
-    next();
-});
+    static isExcludedUrl(url) {
+        return url.startsWith('data:') || 
+               url.startsWith('javascript:') || 
+               url.startsWith('#') || 
+               url.startsWith('mailto:') || 
+               url.startsWith('tel:');
+    }
 
-// Initialize WebSocket manager
-const wsManager = new WebSocketManager(wss);
-
-// Content transformer
-class ContentTransformer {
-    static transformHtml(html, baseUrl) {
-        const gameSupport = `
+    static generateGameScript() {
+        return `
             <script>
                 (function() {
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const ws = new WebSocket(wsProtocol + '//' + window.location.host);
-                    
                     let gameState = null;
                     let gameFrame = null;
 
@@ -337,6 +402,7 @@ class ContentTransformer {
                             }
                         });
                     }
+
                     ws.onmessage = function(event) {
                         try {
                             const data = JSON.parse(event.data);
@@ -360,48 +426,6 @@ class ContentTransformer {
                         }
                     }
 
-                    function updateGameState(newState) {
-                        gameState = newState;
-                        if (gameFrame) {
-                            gameFrame.contentWindow.postMessage({
-                                type: 'stateUpdate',
-                                state: gameState
-                            }, '*');
-                        }
-                    }
-
-                    function handleGameAction(data) {
-                        if (gameFrame) {
-                            gameFrame.contentWindow.postMessage({
-                                type: 'actionUpdate',
-                                action: data.action,
-                                result: data.result
-                            }, '*');
-                        }
-                    }
-
-                    document.addEventListener('click', function(e) {
-                        const link = e.target.closest('a');
-                        if (link) {
-                            const href = link.getAttribute('href');
-                            if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                
-                                try {
-                                    const baseUrl = window.location.href.split('?url=')[1];
-                                    const decodedBase = decodeURIComponent(atob(baseUrl));
-                                    const absoluteUrl = new URL(href, decodedBase).href;
-                                    const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
-                                    window.location.href = '/watch?url=' + encodedUrl;
-                                } catch (error) {
-                                    console.error('URL processing error:', error);
-                                    showError('Invalid URL format');
-                                }
-                            }
-                        }
-                    }, true);
-
                     if (document.readyState === 'loading') {
                         document.addEventListener('DOMContentLoaded', detectAndSetupGame);
                     } else {
@@ -410,84 +434,29 @@ class ContentTransformer {
                 })();
             </script>
         `;
-
-        return html
-            .replace(/<head>/i, `<head><base href="${baseUrl}">`)
-            .replace('</head>', `${gameSupport}</head>`)
-            .replace(/(href|src|action)=["']((?!data:|javascript:|#|mailto:|tel:).+?)["']/gi, 
-                (match, attr, url) => {
-                    try {
-                        const absoluteUrl = new URL(url, baseUrl).href;
-                        const encodedUrl = obfuscateUrl(absoluteUrl);
-                        return `${attr}="/watch?url=${encodedUrl}"`;
-                    } catch (e) {
-                        return match;
-                    }
-                }
-            );
-    }
-
-    static transformCss(css, baseUrl) {
-        return css.replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
-            try {
-                const absoluteUrl = new URL(url, baseUrl).href;
-                const encodedUrl = obfuscateUrl(absoluteUrl);
-                return `url('/watch?url=${encodedUrl}')`;
-            } catch (e) {
-                return match;
-            }
-        });
-    }
-
-    static transformJavaScript(js) {
-        return `
-            (function() {
-                const originalXHR = window.XMLHttpRequest;
-                const originalFetch = window.fetch;
-                const originalWebSocket = window.WebSocket;
-
-                window.XMLHttpRequest = function() {
-                    const xhr = new originalXHR();
-                    const originalOpen = xhr.open;
-                    
-                    xhr.open = function(method, url, ...args) {
-                        try {
-                            const absoluteUrl = new URL(url, window.location.href).href;
-                            const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
-                            return originalOpen.call(this, method, '/watch?url=' + encodedUrl, ...args);
-                        } catch (e) {
-                            return originalOpen.call(this, method, url, ...args);
-                        }
-                    };
-                    
-                    return xhr;
-                };
-
-                window.fetch = async function(url, options = {}) {
-                    try {
-                        const absoluteUrl = new URL(url, window.location.href).href;
-                        const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
-                        return originalFetch('/watch?url=' + encodedUrl, options);
-                    } catch (e) {
-                        return originalFetch(url, options);
-                    }
-                };
-
-                window.WebSocket = function(url, protocols) {
-                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    return new originalWebSocket(
-                        wsProtocol + '//' + window.location.host,
-                        protocols
-                    );
-                };
-            })();
-
-            ${js}
-        `;
     }
 }
 
-// Main route handler
+// Initialize core components
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+const cache = new AdvancedCache({
+    maxSize: MAX_CACHE_SIZE,
+    maxAge: CACHE_TTL,
+    compressionThreshold: 1024
+});
+
+// Middleware setup
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use((req, res, next) => {
+    res.set(SECURITY_HEADERS);
+    next();
+});
+
+// Main route handlers and server initialization
 app.get('/', (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(`
@@ -497,6 +466,7 @@ app.get('/', (req, res) => {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>BlissFly 🪰</title>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
             <style>
                 :root {
                     --primary-color: #2196F3;
@@ -512,97 +482,6 @@ app.get('/', (req, res) => {
                     padding: 0;
                 }
 
-                .loading-overlay {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(255, 255, 255, 0.95);
-                    z-index: 999;
-                    display: none;
-                }
-
-                @keyframes flyAnimation {
-                    0% { transform: translate(0, 0) rotate(0deg); }
-                    25% { transform: translate(100px, -50px) rotate(45deg); }
-                    50% { transform: translate(0, -100px) rotate(90deg); }
-                    75% { transform: translate(-100px, -50px) rotate(135deg); }
-                    100% { transform: translate(0, 0) rotate(360deg); }
-                }
-
-                @keyframes poopBounce {
-                    0%, 100% { transform: translateY(0); }
-                    50% { transform: translateY(-10px); }
-                }
-
-                .loading-animation {
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    display: none;
-                    z-index: 1000;
-                }
-
-                .fly {
-                    font-size: 48px;
-                    position: absolute;
-                    animation: flyAnimation 2s infinite;
-                }
-
-                .poop {
-                    font-size: 48px;
-                    animation: poopBounce 1s infinite;
-                }
-
-                .info-warning {
-                    margin-top: 10px;
-                    text-align: center;
-                }
-
-                .warning-icon {
-                    animation: pulsate 2s infinite;
-                    color: var(--error-color);
-                    font-size: 1.5em;
-                    cursor: pointer;
-                }
-
-                @keyframes pulsate {
-                    0% { opacity: 1; color: var(--error-color); }
-                    50% { opacity: 0.5; color: darkred; }
-                    100% { opacity: 1; color: var(--error-color); }
-                }
-
-                .info-content {
-                    display: none;
-                    background: #fff;
-                    padding: 15px;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                    margin-top: 10px;
-                }
-
-                .error-popup {
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: linear-gradient(135deg, #ff4444, #ff6b6b);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
-                    animation: shakeError 0.5s ease-in-out;
-                    z-index: 1001;
-                }
-
-                @keyframes shakeError {
-                    0%, 100% { transform: translate(-50%, -50%); }
-                    25% { transform: translate(-53%, -50%); }
-                    75% { transform: translate(-47%, -50%); }
-                }
-
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
                     line-height: 1.6;
@@ -613,12 +492,15 @@ app.get('/', (req, res) => {
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
+                    overflow-x: hidden;
                 }
 
                 .container {
                     width: 100%;
                     max-width: 600px;
                     padding: 2rem;
+                    perspective: 1000px;
+                    position: relative;
                 }
 
                 .proxy-card {
@@ -627,7 +509,8 @@ app.get('/', (req, res) => {
                     padding: 2rem;
                     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
                     position: relative;
-                    overflow: hidden;
+                    transition: transform 0.3s ease;
+                    transform-style: preserve-3d;
                 }
 
                 .title {
@@ -636,19 +519,15 @@ app.get('/', (req, res) => {
                     color: var(--primary-color);
                     position: relative;
                     font-size: 2.5em;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                 }
 
                 .title-fly {
-                    position: absolute;
-                    top: -10px;
-                    right: -40px;
+                    margin-left: 10px;
                     font-size: 1.2em;
                     animation: flyHover 2s infinite;
-                }
-
-                @keyframes flyHover {
-                    0%, 100% { transform: translate(0, 0); }
-                    50% { transform: translate(5px, -5px); }
                 }
 
                 .proxy-form {
@@ -664,6 +543,7 @@ app.get('/', (req, res) => {
                     border-radius: 6px;
                     font-size: 16px;
                     transition: all 0.3s ease;
+                    background: transparent;
                 }
 
                 .url-input:focus {
@@ -686,31 +566,88 @@ app.get('/', (req, res) => {
                 .submit-btn:hover {
                     background: var(--hover-color);
                     transform: translateY(-2px);
-                    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2);
                 }
 
-                .submit-btn:active {
-                    transform: translateY(0);
+                .info-warning {
+                    position: absolute;
+                    bottom: -60px;
+                    left: 0;
+                    right: 0;
+                    background: #fff;
+                    padding: 15px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    z-index: 1;
                 }
 
-                .version {
+                .warning-icon {
+                    display: flex;
+                    align-items: center;
+                    color: var(--error-color);
+                }
+
+                .warning-icon i {
+                    margin-right: 10px;
+                    animation: pulsate 2s infinite;
+                }
+
+                .dropdown-arrow {
+                    margin-left: auto;
+                    transition: transform 0.3s ease;
+                }
+
+                .info-content {
+                    position: absolute;
+                    bottom: -120px;
+                    left: 0;
+                    right: 0;
+                    background: #fff;
+                    padding: 15px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    display: none;
+                    z-index: 0;
+                }
+
+                @keyframes pulsate {
+                    0% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                    100% { opacity: 1; }
+                }
+
+                @keyframes flyHover {
+                    0%, 100% { transform: translate(0, 0); }
+                    50% { transform: translate(5px, -5px); }
+                }
+
+                .error-popup {
                     position: fixed;
-                    bottom: 1rem;
-                    right: 1rem;
-                    font-size: 0.8rem;
-                    color: #666;
-                    padding: 4px 8px;
-                    background: rgba(255, 255, 255, 0.8);
-                    border-radius: 4px;
+                    top: 20px;
+                    right: 20px;
+                    background: var(--error-color);
+                    color: white;
+                    padding: 15px 25px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(255, 68, 68, 0.2);
+                    transform: translateX(120%);
+                    animation: slideIn 0.3s forwards, slideOut 0.3s 2.7s forwards;
+                }
+
+                @keyframes slideIn {
+                    to { transform: translateX(0); }
+                }
+
+                @keyframes slideOut {
+                    to { transform: translateX(120%); }
                 }
             </style>
         </head>
         <body>
-            <div class="loading-overlay"></div>
-            <div class="loading-animation">
-                <span class="fly">🪰</span>
-                <span class="poop">💩</span>
-            </div>
             <div class="container">
                 <div class="proxy-card">
                     <h1 class="title">BlissFly<span class="title-fly">🪰</span></h1>
@@ -721,53 +658,75 @@ app.get('/', (req, res) => {
                                required
                                autocomplete="off"
                                spellcheck="false">
-                        <div class="info-warning">
-                            <span class="warning-icon">⚠️</span>
-                            <div class="info-content">
-                                This proxy only searches with URLs please use a URL when searching (example.com)
-                            </div>
-                        </div>
                         <button type="submit" class="submit-btn">Browse</button>
                     </form>
                 </div>
+                <div class="info-warning">
+                    <div class="warning-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Important Information</span>
+                    </div>
+                    <i class="fas fa-chevron-down dropdown-arrow"></i>
+                </div>
+                <div class="info-content">
+                    This proxy only searches with URLs please use a URL when searching (example.com)
+                </div>
             </div>
-            <div class="version">Version ${VERSION}</div>
+
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
-                    const loadingOverlay = document.querySelector('.loading-overlay');
-                    const loadingAnimation = document.querySelector('.loading-animation');
                     const form = document.getElementById('proxyForm');
                     const input = form.querySelector('input');
-                    const warningIcon = document.querySelector('.warning-icon');
+                    const proxyCard = document.querySelector('.proxy-card');
+                    const infoWarning = document.querySelector('.info-warning');
                     const infoContent = document.querySelector('.info-content');
+                    const dropdownArrow = document.querySelector('.dropdown-arrow');
 
-                    warningIcon.addEventListener('click', () => {
-                        infoContent.style.display = infoContent.style.display === 'none' ? 'block' : 'none';
+                    // Tilt effect
+                    document.addEventListener('mousemove', (e) => {
+                        const rect = proxyCard.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        
+                        const centerX = rect.width / 2;
+                        const centerY = rect.height / 2;
+                        
+                        const tiltX = (y - centerY) / 20;
+                        const tiltY = (centerX - x) / 20;
+                        
+                        proxyCard.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
                     });
 
+                    proxyCard.addEventListener('mouseleave', () => {
+                        proxyCard.style.transform = 'perspective(1000px) rotateX(0) rotateY(0)';
+                    });
+
+                    // Warning dropdown
+                    infoWarning.addEventListener('click', () => {
+                        const isVisible = infoContent.style.display === 'block';
+                        infoContent.style.display = isVisible ? 'none' : 'block';
+                        dropdownArrow.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(180deg)';
+                        infoWarning.style.borderRadius = isVisible ? '10px' : '10px 10px 0 0';
+                    });
+
+                    // Form submission
                     form.addEventListener('submit', async (e) => {
                         e.preventDefault();
                         let url = input.value.trim();
+                        
+                        // Remove any protocol if present
+                        url = url.replace(/^(https?:\/\/)?(www\.)?/, '');
                         
                         if (!url) {
                             showError('Please enter a URL');
                             return;
                         }
 
-                        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                            url = 'https://' + url;
-                        }
-
-                        loadingOverlay.style.display = 'block';
-                        loadingAnimation.style.display = 'block';
-                        
                         try {
-                            const encodedUrl = btoa(encodeURIComponent(url));
+                            const encodedUrl = btoa(encodeURIComponent(`https://${url}`));
                             window.location.href = '/watch?url=' + encodedUrl;
                         } catch (error) {
                             showError('Invalid URL format');
-                            loadingOverlay.style.display = 'none';
-                            loadingAnimation.style.display = 'none';
                         }
                     });
 
@@ -781,10 +740,6 @@ app.get('/', (req, res) => {
                         errorPopup.className = 'error-popup';
                         errorPopup.textContent = message;
                         document.body.appendChild(errorPopup);
-
-                        setTimeout(() => {
-                            errorPopup.remove();
-                        }, 3000);
                     }
 
                     input.focus();
@@ -803,19 +758,20 @@ app.get('/watch', async (req, res) => {
             return res.status(400).send('URL parameter is required');
         }
 
-        const url = deobfuscateUrl(encodedUrl);
-        const normalizedUrl = normalizeUrl(url);
+        const url = Buffer.from(encodedUrl, 'base64').toString('utf8');
+        const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
         
-        const cachedResponse = cache.get(normalizedUrl);
+        const cachedResponse = await cache.get(normalizedUrl);
         if (cachedResponse) {
             return res.send(cachedResponse);
         }
 
         const response = await fetch(normalizedUrl, {
-            agent: new https.Agent({
-                rejectUnauthorized: false,
-                secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT
-            })
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            redirect: 'follow',
+            follow: MAX_REDIRECTS
         });
 
         const contentType = response.headers.get('content-type') || '';
@@ -827,16 +783,16 @@ app.get('/watch', async (req, res) => {
         }
 
         let content = await response.text();
-
+        
         if (contentType.includes('text/html')) {
-            content = ContentTransformer.transformHtml(content, normalizedUrl);
+            content = await ContentProcessor.transformHtml(content, normalizedUrl);
         } else if (contentType.includes('text/css')) {
-            content = ContentTransformer.transformCss(content, normalizedUrl);
+            content = ContentProcessor.transformCss(content, normalizedUrl);
         } else if (contentType.includes('javascript')) {
-            content = ContentTransformer.transformJavaScript(content);
+            content = await ContentProcessor.transformJavaScript(content, normalizedUrl);
         }
 
-        cache.set(normalizedUrl, content);
+        await cache.set(normalizedUrl, content);
         res.send(content);
 
     } catch (error) {
@@ -869,16 +825,6 @@ app.get('/watch', async (req, res) => {
             </div>
         `);
     }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'healthy',
-        version: VERSION,
-        cacheStats: cache.getStats(),
-        uptime: process.uptime()
-    });
 });
 
 // Start server
