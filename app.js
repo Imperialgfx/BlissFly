@@ -889,7 +889,7 @@ app.get('/', (req, res) => {
                             const fly = document.createElement('span');
                             fly.className = 'mouse-fly';
                             fly.textContent = '🪰';
-                            fly.style.transitionDelay = `${i * 0.1}s`;
+                            fly.style.transitionDelay = (i * 0.1) + 's';
                             document.body.appendChild(fly);
                             return fly;
                         });
