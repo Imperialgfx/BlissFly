@@ -536,9 +536,7 @@ class ContentTransformer {
 }
 
 app.get('/', (req, res) => {
-    res.setHeader('Content-Type', 'text/html');
-    res.send(
-        `<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
@@ -967,6 +965,8 @@ app.get('/', (req, res) => {
             </script>
         </body>
         </html>
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
     `);
 });
 
