@@ -745,10 +745,6 @@ app.get('/', (req, res) => {
     res.send(htmlContent);
 });
 
-    res.setHeader('Content-Type', 'text/html');
-    res.send(htmlContent);
-});
-
 // Proxy route handler
 app.get('/proxy', async (req, res) => {
     performanceMonitor.startTimer('proxyRequest');
