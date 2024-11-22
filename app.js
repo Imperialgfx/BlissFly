@@ -551,7 +551,8 @@ app.get('/', (req, res) => {
                     --background: #f5f5f5;
                     --card-background: #ffffff;
                     --error-color: #ff4444;
-                    --warning-color: #ff9800;
+                    --text-color: #495057;
+                    --border-color: #e9ecef;
                 }
 
                 * {
@@ -564,7 +565,7 @@ app.get('/', (req, res) => {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
                     line-height: 1.6;
                     background: var(--background);
-                    color: #333;
+                    color: var(--text-color);
                     min-height: 100vh;
                     display: flex;
                     flex-direction: column;
@@ -585,6 +586,7 @@ app.get('/', (req, res) => {
                     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
                     position: relative;
                     overflow: hidden;
+                    margin-bottom: 20px;
                 }
 
                 .title {
@@ -618,7 +620,7 @@ app.get('/', (req, res) => {
                 .url-input {
                     width: 100%;
                     padding: 12px;
-                    border: 2px solid #e0e0e0;
+                    border: 2px solid var(--border-color);
                     border-radius: 6px;
                     font-size: 16px;
                     transition: all 0.3s ease;
@@ -630,69 +632,68 @@ app.get('/', (req, res) => {
                     box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
                 }
 
-                .info-warning {
-                    margin-top: 15px;
-                    text-align: center;
-                    position: relative;
+                .info-section {
+                    width: 100%;
+                    max-width: 600px;
+                    padding: 0 2rem;
+                }
+
+                .warning-trigger {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: #f8f9fa;
+                    border: 1px solid var(--border-color);
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    width: 100%;
+                }
+
+                .warning-trigger:hover {
+                    background: #e9ecef;
                 }
 
                 .warning-icon {
-                    background: var(--warning-color);
-                    color: white;
-                    padding: 8px 12px;
-                    border-radius: 50px;
-                    font-size: 14px;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
+                    width: 20px;
+                    height: 20px;
+                    fill: #dc3545;
                 }
 
-                .warning-icon:before {
-                    content: "⚠️";
-                    font-size: 16px;
+                .warning-text {
+                    flex-grow: 1;
+                    font-weight: 500;
                 }
 
-                .warning-icon:hover {
-                    background: #f57c00;
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 8px rgba(255, 152, 0, 0.2);
+                .arrow-icon {
+                    width: 12px;
+                    height: 12px;
+                    transition: transform 0.3s ease;
+                    fill: var(--text-color);
+                }
+
+                .warning-trigger.active .arrow-icon {
+                    transform: rotate(180deg);
                 }
 
                 .info-content {
-                    position: absolute;
-                    top: calc(100% + 10px);
-                    left: 50%;
-                    transform: translateX(-50%);
                     background: white;
-                    padding: 15px 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 6px 16px rgba(0,0,0,0.1);
-                    width: 90%;
-                    max-width: 400px;
+                    border: 1px solid var(--border-color);
+                    border-radius: 8px;
+                    padding: 16px;
+                    margin-top: 8px;
+                    transform-origin: top;
+                    transform: scaleY(0);
                     opacity: 0;
-                    visibility: hidden;
-                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                    z-index: 100;
+                    height: 0;
+                    transition: all 0.3s ease;
                 }
 
                 .info-content.active {
+                    transform: scaleY(1);
                     opacity: 1;
-                    visibility: visible;
-                    transform: translateX(-50%) translateY(0);
-                }
-
-                .info-content:before {
-                    content: "";
-                    position: absolute;
-                    top: -8px;
-                    left: 50%;
-                    transform: translateX(-50%) rotate(45deg);
-                    width: 16px;
-                    height: 16px;
-                    background: white;
-                    box-shadow: -2px -2px 5px rgba(0,0,0,0.05);
+                    height: auto;
                 }
 
                 .submit-btn {
@@ -726,54 +727,9 @@ app.get('/', (req, res) => {
                     background: rgba(255, 255, 255, 0.8);
                     border-radius: 4px;
                 }
-
-                .loading-overlay {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(255, 255, 255, 0.95);
-                    z-index: 999;
-                    display: none;
-                }
-
-                .loading-animation {
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    display: none;
-                    z-index: 1000;
-                }
-
-                .error-popup {
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: linear-gradient(135deg, #ff4444, #ff6b6b);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
-                    animation: shakeError 0.5s ease-in-out;
-                    z-index: 1001;
-                }
-
-                @keyframes shakeError {
-                    0%, 100% { transform: translate(-50%, -50%); }
-                    25% { transform: translate(-53%, -50%); }
-                    75% { transform: translate(-47%, -50%); }
-                }
             </style>
         </head>
         <body>
-            <div class="loading-overlay"></div>
-            <div class="loading-animation">
-                <span class="fly">🪰</span>
-                <span class="poop">💩</span>
-            </div>
             <div class="container">
                 <div class="proxy-card">
                     <h1 class="title"><span class="title-fly">🪰</span>BlissFly</h1>
@@ -784,32 +740,40 @@ app.get('/', (req, res) => {
                                required
                                autocomplete="off"
                                spellcheck="false">
-                        <div class="info-warning">
-                            <span class="warning-icon">Important Info</span>
-                            <div class="info-content">
-                                This proxy only searches with URLs please use a URL when searching (example.com)
-                            </div>
-                        </div>
                         <button type="submit" class="submit-btn">Browse</button>
                     </form>
+                </div>
+                <div class="info-section">
+                    <div class="warning-trigger">
+                        <svg class="warning-icon" viewBox="0 0 24 24">
+                            <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM13 16h-2v2h2v-2zm0-6h-2v4h2v-4z"/>
+                        </svg>
+                        <span class="warning-text">Important Information</span>
+                        <svg class="arrow-icon" viewBox="0 0 24 24">
+                            <path d="M7 10l5 5 5-5z"/>
+                        </svg>
+                    </div>
+                    <div class="info-content">
+                        This proxy only searches with URLs please use a URL when searching (example.com)
+                    </div>
                 </div>
             </div>
             <div class="version">Version ${VERSION}</div>
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
-                    const loadingOverlay = document.querySelector('.loading-overlay');
-                    const loadingAnimation = document.querySelector('.loading-animation');
                     const form = document.getElementById('proxyForm');
                     const input = form.querySelector('input');
-                    const warningIcon = document.querySelector('.warning-icon');
+                    const warningTrigger = document.querySelector('.warning-trigger');
                     const infoContent = document.querySelector('.info-content');
 
-                    warningIcon.addEventListener('click', () => {
+                    warningTrigger.addEventListener('click', () => {
+                        warningTrigger.classList.toggle('active');
                         infoContent.classList.toggle('active');
                     });
 
                     document.addEventListener('click', (e) => {
-                        if (!warningIcon.contains(e.target) && !infoContent.contains(e.target)) {
+                        if (!warningTrigger.contains(e.target)) {
+                            warningTrigger.classList.remove('active');
                             infoContent.classList.remove('active');
                         }
                     });
@@ -827,16 +791,11 @@ app.get('/', (req, res) => {
                             url = 'https://' + url;
                         }
 
-                        loadingOverlay.style.display = 'block';
-                        loadingAnimation.style.display = 'block';
-                        
                         try {
                             const encodedUrl = btoa(encodeURIComponent(url));
                             window.location.href = '/watch?url=' + encodedUrl;
                         } catch (error) {
                             showError('Invalid URL format');
-                            loadingOverlay.style.display = 'none';
-                            loadingAnimation.style.display = 'none';
                         }
                     });
 
