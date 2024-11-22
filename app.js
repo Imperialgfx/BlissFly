@@ -137,7 +137,27 @@ class PerformanceMonitor {
     }
 }
 
-const performanceMonitor = new PerformanceMonitor();
+const performanceMonitor = {
+    timers: new Map(),
+    
+    startTimer(label) {
+        this.timers.set(label, process.hrtime());
+    },
+    
+    endTimer(label) {
+        const start = this.timers.get(label);
+        if (!start) return;
+        const diff = process.hrtime(start);
+        return (diff[0] * 1e9 + diff[1]) / 1e6; // Convert to milliseconds
+    },
+    
+    logError(type, error) {
+        console.error(`[${type}] ${error.message}`);
+        console.error(error.stack);
+    }
+};
+
+module.exports = performanceMonitor;
 
 // Content Transformer
 class ContentTransformer {
