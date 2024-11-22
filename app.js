@@ -844,7 +844,7 @@ app.get('/', (req, res) => {
                     </div>
                 </div>
             </div>
-            <div class="version">Version ${VERSION}</div>
+            <div class="version">Version 1.1.4</div>
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
                     const form = document.getElementById('proxyForm');
