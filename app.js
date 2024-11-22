@@ -553,12 +553,19 @@ app.get('/', (req, res) => {
                     --error-color: #ff4444;
                     --text-color: #495057;
                     --border-color: #e9ecef;
+                    --warning-shadow: rgba(220, 53, 69, 0.4);
                 }
 
                 * {
                     box-sizing: border-box;
                     margin: 0;
                     padding: 0;
+                }
+
+                @keyframes shadowPulse {
+                    0% { box-shadow: 0 2px 12px rgba(220, 53, 69, 0.2); }
+                    50% { box-shadow: 0 2px 20px rgba(220, 53, 69, 0.6); }
+                    100% { box-shadow: 0 2px 12px rgba(220, 53, 69, 0.2); }
                 }
 
                 body {
@@ -649,6 +656,12 @@ app.get('/', (req, res) => {
                     cursor: pointer;
                     transition: all 0.2s ease;
                     width: 100%;
+                    animation: shadowPulse 2s infinite;
+                }
+
+                .warning-trigger.clicked {
+                    animation: none;
+                    box-shadow: 0 2px 12px rgba(220, 53, 69, 0.1);
                 }
 
                 .warning-trigger:hover {
@@ -768,6 +781,7 @@ app.get('/', (req, res) => {
 
                     warningTrigger.addEventListener('click', () => {
                         warningTrigger.classList.toggle('active');
+                        warningTrigger.classList.add('clicked');
                         infoContent.classList.toggle('active');
                     });
 
