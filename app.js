@@ -644,7 +644,7 @@ app.get('/', (req, res) => {
                 .title-fly {
                     position: absolute;
                     top: 5px;
-                    left: -35px;
+                    left: -10px;
                     font-size: 1.2em;
                     animation: flyHover 3s ease-in-out infinite;
                 }
