@@ -630,10 +630,9 @@ app.get('/', (req, res) => {
 
                 .brown-splotch {
                     position: absolute;
-                    background: rgba(139, 69, 19, 0.25);
+                    background: rgba(139, 69, 19, 0.1);
                     border-radius: 50%;
-                    filter: blur(3px);
-                    transform: translate(-50%, -50%);
+                    filter: blur(4px);
                 }
 
                 .mini-fly {
@@ -835,14 +834,14 @@ app.get('/', (req, res) => {
                         const decoration = document.createElement('div');
                         decoration.className = 'background-decoration';
                         
-                        // Create brown splotches with tighter positioning
+                        // Create brown splotches
                         for (let i = 0; i < 5; i++) {
                             const splotch = document.createElement('div');
                             splotch.className = 'brown-splotch';
-                            splotch.style.width = Math.random() * 30 + 15 + 'px';
+                            splotch.style.width = Math.random() * 40 + 20 + 'px';
                             splotch.style.height = splotch.style.width;
-                            splotch.style.left = Math.random() * 60 + 20 + '%';
-                            splotch.style.top = Math.random() * 60 + 20 + '%';
+                            splotch.style.left = Math.random() * 80 + 10 + '%';
+                            splotch.style.top = Math.random() * 80 + 10 + '%';
                             decoration.appendChild(splotch);
                         }
                         
