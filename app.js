@@ -553,7 +553,6 @@ app.get('/', (req, res) => {
                     --error-color: #ff4444;
                     --text-color: #495057;
                     --border-color: #e9ecef;
-                    --warning-shadow: rgba(220, 53, 69, 0.4);
                 }
 
                 * {
@@ -563,9 +562,23 @@ app.get('/', (req, res) => {
                 }
 
                 @keyframes shadowPulse {
-                    0% { box-shadow: 0 2px 12px rgba(220, 53, 69, 0.2); }
-                    50% { box-shadow: 0 2px 20px rgba(220, 53, 69, 0.6); }
-                    100% { box-shadow: 0 2px 12px rgba(220, 53, 69, 0.2); }
+                    0% { box-shadow: 0 2px 12px rgba(255, 0, 0, 0.4); }
+                    50% { box-shadow: 0 2px 20px rgba(255, 0, 0, 0.8); }
+                    100% { box-shadow: 0 2px 12px rgba(255, 0, 0, 0.4); }
+                }
+
+                @keyframes miniFlying {
+                    0% { transform: translate(0, 0) rotate(0deg); }
+                    25% { transform: translate(10px, -10px) rotate(45deg); }
+                    50% { transform: translate(20px, 0) rotate(90deg); }
+                    75% { transform: translate(10px, 10px) rotate(180deg); }
+                    100% { transform: translate(0, 0) rotate(360deg); }
+                }
+
+                @keyframes flyHover {
+                    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+                    25% { transform: translate(3px, -3px) rotate(10deg); }
+                    75% { transform: translate(-3px, 3px) rotate(-10deg); }
                 }
 
                 body {
@@ -602,6 +615,30 @@ app.get('/', (req, res) => {
                     color: var(--primary-color);
                     position: relative;
                     font-size: 2.5em;
+                    z-index: 2;
+                }
+
+                .background-decoration {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    z-index: 1;
+                    pointer-events: none;
+                }
+
+                .brown-splotch {
+                    position: absolute;
+                    background: rgba(139, 69, 19, 0.1);
+                    border-radius: 50%;
+                    filter: blur(4px);
+                }
+
+                .mini-fly {
+                    position: absolute;
+                    font-size: 8px;
+                    animation: miniFlying 4s linear infinite;
                 }
 
                 .title-fly {
@@ -610,12 +647,6 @@ app.get('/', (req, res) => {
                     left: -35px;
                     font-size: 1.2em;
                     animation: flyHover 3s ease-in-out infinite;
-                }
-
-                @keyframes flyHover {
-                    0%, 100% { transform: translate(0, 0) rotate(0deg); }
-                    25% { transform: translate(3px, -3px) rotate(10deg); }
-                    75% { transform: translate(-3px, 3px) rotate(-10deg); }
                 }
 
                 .proxy-form {
@@ -661,7 +692,7 @@ app.get('/', (req, res) => {
 
                 .warning-trigger.clicked {
                     animation: none;
-                    box-shadow: 0 2px 12px rgba(220, 53, 69, 0.1);
+                    box-shadow: 0 2px 12px rgba(255, 0, 0, 0.1);
                 }
 
                 .warning-trigger:hover {
@@ -740,6 +771,26 @@ app.get('/', (req, res) => {
                     background: rgba(255, 255, 255, 0.8);
                     border-radius: 4px;
                 }
+
+                .error-popup {
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: linear-gradient(135deg, #ff4444, #ff6b6b);
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
+                    animation: shakeError 0.5s ease-in-out;
+                    z-index: 1001;
+                }
+
+                @keyframes shakeError {
+                    0%, 100% { transform: translate(-50%, -50%); }
+                    25% { transform: translate(-53%, -50%); }
+                    75% { transform: translate(-47%, -50%); }
+                }
             </style>
         </head>
         <body>
@@ -778,6 +829,37 @@ app.get('/', (req, res) => {
                     const input = form.querySelector('input');
                     const warningTrigger = document.querySelector('.warning-trigger');
                     const infoContent = document.querySelector('.info-content');
+
+                    function createBackgroundElements() {
+                        const decoration = document.createElement('div');
+                        decoration.className = 'background-decoration';
+                        
+                        // Create brown splotches
+                        for (let i = 0; i < 5; i++) {
+                            const splotch = document.createElement('div');
+                            splotch.className = 'brown-splotch';
+                            splotch.style.width = Math.random() * 40 + 20 + 'px';
+                            splotch.style.height = splotch.style.width;
+                            splotch.style.left = Math.random() * 80 + 10 + '%';
+                            splotch.style.top = Math.random() * 80 + 10 + '%';
+                            decoration.appendChild(splotch);
+                        }
+                        
+                        // Create mini flies
+                        for (let i = 0; i < 6; i++) {
+                            const fly = document.createElement('span');
+                            fly.className = 'mini-fly';
+                            fly.textContent = '🪰';
+                            fly.style.left = Math.random() * 80 + 10 + '%';
+                            fly.style.top = Math.random() * 80 + 10 + '%';
+                            fly.style.animationDelay = (Math.random() * 2) + 's';
+                            decoration.appendChild(fly);
+                        }
+                        
+                        document.querySelector('.title').appendChild(decoration);
+                    }
+
+                    createBackgroundElements();
 
                     warningTrigger.addEventListener('click', () => {
                         warningTrigger.classList.toggle('active');
