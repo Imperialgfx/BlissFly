@@ -535,7 +535,6 @@ class ContentTransformer {
     }
 }
 
-// Main route handler
 app.get('/', (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(`
@@ -552,103 +551,13 @@ app.get('/', (req, res) => {
                     --background: #f5f5f5;
                     --card-background: #ffffff;
                     --error-color: #ff4444;
+                    --warning-color: #ff9800;
                 }
 
                 * {
                     box-sizing: border-box;
                     margin: 0;
                     padding: 0;
-                }
-
-                .loading-overlay {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(255, 255, 255, 0.95);
-                    z-index: 999;
-                    display: none;
-                }
-
-                @keyframes flyAnimation {
-                    0% { transform: translate(0, 0) rotate(0deg); }
-                    25% { transform: translate(100px, -50px) rotate(45deg); }
-                    50% { transform: translate(0, -100px) rotate(90deg); }
-                    75% { transform: translate(-100px, -50px) rotate(135deg); }
-                    100% { transform: translate(0, 0) rotate(360deg); }
-                }
-
-                @keyframes poopBounce {
-                    0%, 100% { transform: translateY(0); }
-                    50% { transform: translateY(-10px); }
-                }
-
-                .loading-animation {
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    display: none;
-                    z-index: 1000;
-                }
-
-                .fly {
-                    font-size: 48px;
-                    position: absolute;
-                    animation: flyAnimation 2s infinite;
-                }
-
-                .poop {
-                    font-size: 48px;
-                    animation: poopBounce 1s infinite;
-                }
-
-                .info-warning {
-                    margin-top: 10px;
-                    text-align: center;
-                }
-
-                .warning-icon {
-                    animation: pulsate 2s infinite;
-                    color: var(--error-color);
-                    font-size: 1.5em;
-                    cursor: pointer;
-                }
-
-                @keyframes pulsate {
-                    0% { opacity: 1; color: var(--error-color); }
-                    50% { opacity: 0.5; color: darkred; }
-                    100% { opacity: 1; color: var(--error-color); }
-                }
-
-                .info-content {
-                    display: none;
-                    background: #fff;
-                    padding: 15px;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                    margin-top: 10px;
-                }
-
-                .error-popup {
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: linear-gradient(135deg, #ff4444, #ff6b6b);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
-                    animation: shakeError 0.5s ease-in-out;
-                    z-index: 1001;
-                }
-
-                @keyframes shakeError {
-                    0%, 100% { transform: translate(-50%, -50%); }
-                    25% { transform: translate(-53%, -50%); }
-                    75% { transform: translate(-47%, -50%); }
                 }
 
                 body {
@@ -688,15 +597,16 @@ app.get('/', (req, res) => {
 
                 .title-fly {
                     position: absolute;
-                    top: -10px;
-                    right: -40px;
+                    top: 5px;
+                    left: -35px;
                     font-size: 1.2em;
-                    animation: flyHover 2s infinite;
+                    animation: flyHover 3s ease-in-out infinite;
                 }
 
                 @keyframes flyHover {
-                    0%, 100% { transform: translate(0, 0); }
-                    50% { transform: translate(5px, -5px); }
+                    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+                    25% { transform: translate(3px, -3px) rotate(10deg); }
+                    75% { transform: translate(-3px, 3px) rotate(-10deg); }
                 }
 
                 .proxy-form {
@@ -718,6 +628,71 @@ app.get('/', (req, res) => {
                     border-color: var(--primary-color);
                     outline: none;
                     box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+                }
+
+                .info-warning {
+                    margin-top: 15px;
+                    text-align: center;
+                    position: relative;
+                }
+
+                .warning-icon {
+                    background: var(--warning-color);
+                    color: white;
+                    padding: 8px 12px;
+                    border-radius: 50px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .warning-icon:before {
+                    content: "⚠️";
+                    font-size: 16px;
+                }
+
+                .warning-icon:hover {
+                    background: #f57c00;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(255, 152, 0, 0.2);
+                }
+
+                .info-content {
+                    position: absolute;
+                    top: calc(100% + 10px);
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: white;
+                    padding: 15px 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+                    width: 90%;
+                    max-width: 400px;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    z-index: 100;
+                }
+
+                .info-content.active {
+                    opacity: 1;
+                    visibility: visible;
+                    transform: translateX(-50%) translateY(0);
+                }
+
+                .info-content:before {
+                    content: "";
+                    position: absolute;
+                    top: -8px;
+                    left: 50%;
+                    transform: translateX(-50%) rotate(45deg);
+                    width: 16px;
+                    height: 16px;
+                    background: white;
+                    box-shadow: -2px -2px 5px rgba(0,0,0,0.05);
                 }
 
                 .submit-btn {
@@ -751,6 +726,46 @@ app.get('/', (req, res) => {
                     background: rgba(255, 255, 255, 0.8);
                     border-radius: 4px;
                 }
+
+                .loading-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(255, 255, 255, 0.95);
+                    z-index: 999;
+                    display: none;
+                }
+
+                .loading-animation {
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    display: none;
+                    z-index: 1000;
+                }
+
+                .error-popup {
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: linear-gradient(135deg, #ff4444, #ff6b6b);
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
+                    animation: shakeError 0.5s ease-in-out;
+                    z-index: 1001;
+                }
+
+                @keyframes shakeError {
+                    0%, 100% { transform: translate(-50%, -50%); }
+                    25% { transform: translate(-53%, -50%); }
+                    75% { transform: translate(-47%, -50%); }
+                }
             </style>
         </head>
         <body>
@@ -761,7 +776,7 @@ app.get('/', (req, res) => {
             </div>
             <div class="container">
                 <div class="proxy-card">
-                    <h1 class="title">BlissFly<span class="title-fly">🪰</span></h1>
+                    <h1 class="title"><span class="title-fly">🪰</span>BlissFly</h1>
                     <form id="proxyForm" class="proxy-form">
                         <input type="text" 
                                class="url-input" 
@@ -770,7 +785,7 @@ app.get('/', (req, res) => {
                                autocomplete="off"
                                spellcheck="false">
                         <div class="info-warning">
-                            <span class="warning-icon">⚠️</span>
+                            <span class="warning-icon">Important Info</span>
                             <div class="info-content">
                                 This proxy only searches with URLs please use a URL when searching (example.com)
                             </div>
@@ -790,7 +805,13 @@ app.get('/', (req, res) => {
                     const infoContent = document.querySelector('.info-content');
 
                     warningIcon.addEventListener('click', () => {
-                        infoContent.style.display = infoContent.style.display === 'none' ? 'block' : 'none';
+                        infoContent.classList.toggle('active');
+                    });
+
+                    document.addEventListener('click', (e) => {
+                        if (!warningIcon.contains(e.target) && !infoContent.contains(e.target)) {
+                            infoContent.classList.remove('active');
+                        }
                     });
 
                     form.addEventListener('submit', async (e) => {
