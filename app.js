@@ -581,6 +581,27 @@ app.get('/', (req, res) => {
                     75% { transform: translate(-3px, 3px) rotate(-10deg); }
                 }
 
+                .mouse-splotch {
+                    position: fixed;
+                    width: 40px;
+                    height: 40px;
+                    background: rgba(0, 255, 0, 0.15);
+                    border-radius: 50%;
+                    filter: blur(5px);
+                    pointer-events: none;
+                    transform: translate(-50%, -50%);
+                    z-index: 1000;
+                    transition: all 0.1s ease;
+                }
+
+                .mouse-fly {
+                    position: fixed;
+                    font-size: 8px;
+                    pointer-events: none;
+                    z-index: 1000;
+                    transition: all 0.2s ease;
+                }
+
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
                     line-height: 1.6;
@@ -630,9 +651,10 @@ app.get('/', (req, res) => {
 
                 .brown-splotch {
                     position: absolute;
-                    background: rgba(139, 69, 19, 0.1);
+                    background: rgba(139, 69, 19, 0.25);
                     border-radius: 50%;
-                    filter: blur(4px);
+                    filter: blur(3px);
+                    transform: translate(-50%, -50%);
                 }
 
                 .mini-fly {
@@ -644,7 +666,7 @@ app.get('/', (req, res) => {
                 .title-fly {
                     position: absolute;
                     top: 5px;
-                    left: -10px;
+                    left: -35px;
                     font-size: 1.2em;
                     animation: flyHover 3s ease-in-out infinite;
                 }
@@ -834,14 +856,14 @@ app.get('/', (req, res) => {
                         const decoration = document.createElement('div');
                         decoration.className = 'background-decoration';
                         
-                        // Create brown splotches
+                        // Create brown splotches with tighter positioning
                         for (let i = 0; i < 5; i++) {
                             const splotch = document.createElement('div');
                             splotch.className = 'brown-splotch';
-                            splotch.style.width = Math.random() * 40 + 20 + 'px';
+                            splotch.style.width = Math.random() * 30 + 15 + 'px';
                             splotch.style.height = splotch.style.width;
-                            splotch.style.left = Math.random() * 80 + 10 + '%';
-                            splotch.style.top = Math.random() * 80 + 10 + '%';
+                            splotch.style.left = Math.random() * 60 + 20 + '%';
+                            splotch.style.top = Math.random() * 60 + 20 + '%';
                             decoration.appendChild(splotch);
                         }
                         
@@ -859,7 +881,36 @@ app.get('/', (req, res) => {
                         document.querySelector('.title').appendChild(decoration);
                     }
 
+                    function createMouseFollowers() {
+                        const splotch = document.createElement('div');
+                        splotch.className = 'mouse-splotch';
+                        document.body.appendChild(splotch);
+
+                        // Create trailing flies
+                        const flies = Array.from({length: 3}, (_, i) => {
+                            const fly = document.createElement('span');
+                            fly.className = 'mouse-fly';
+                            fly.textContent = '🪰';
+                            fly.style.transitionDelay = `${i * 0.1}s`;
+                            document.body.appendChild(fly);
+                            return fly;
+                        });
+
+                        document.addEventListener('mousemove', (e) => {
+                            splotch.style.left = `${e.clientX}px`;
+                            splotch.style.top = `${e.clientY}px`;
+
+                            flies.forEach((fly, i) => {
+                                setTimeout(() => {
+                                    fly.style.left = `${e.clientX - 10 - (i * 15)}px`;
+                                    fly.style.top = `${e.clientY - 10 + (i * 5)}px`;
+                                }, i * 50);
+                            });
+                        });
+                    }
+
                     createBackgroundElements();
+                    createMouseFollowers();
 
                     warningTrigger.addEventListener('click', () => {
                         warningTrigger.classList.toggle('active');
