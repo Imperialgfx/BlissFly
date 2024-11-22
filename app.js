@@ -16,7 +16,7 @@ const wss = new WebSocket.Server({ server });
 
 // Constants and configurations
 const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.21';
+const VERSION = '1.1.14';
 const DEBUG = process.env.DEBUG === 'true';
 const MAX_RETRIES = 3;
 const TIMEOUT = 30000;
