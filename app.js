@@ -14,7 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Consts and Cfgs
+// Constants and configurations
 const PORT = process.env.PORT || 10000;
 const VERSION = 'v1.21';
 const DEBUG = process.env.DEBUG === 'true';
@@ -23,7 +23,6 @@ const TIMEOUT = 30000;
 const MAX_CACHE_SIZE = 1000;
 const CACHE_TTL = 600000;
 
-// content handling cfgs
 const PROCESSABLE_TYPES = [
     'text/html',
     'text/css',
@@ -36,7 +35,6 @@ const PROCESSABLE_TYPES = [
     'text/xml'
 ];
 
-// WS message types
 const WS_MESSAGES = {
     GAME_INIT: 'gameInit',
     GAME_STATE: 'gameState',
@@ -300,43 +298,28 @@ class WebSocketManager {
         }
     }
 
-// URL utilities
-const normalizeUrl = (url) => {
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        return `https://${url}`;
+    sendToClient(clientId, data) {
+        const client = this.clients.get(clientId);
+        if (client && client.ws.readyState === WebSocket.OPEN) {
+            client.ws.send(JSON.stringify(data));
+        }
     }
-    return url;
-};
 
-const obfuscateUrl = (url) => Buffer.from(url).toString('base64');
-const deobfuscateUrl = (encoded) => Buffer.from(encoded, 'base64').toString('utf8');
+    handleClose(clientId) {
+        const client = this.clients.get(clientId);
+        if (client && client.gameState) {
+            const gameState = this.gameStates.get(client.gameState);
+            if (gameState) {
+                gameState.players.delete(clientId);
+                if (gameState.players.size === 0) {
+                    this.gameStates.delete(client.gameState);
+                }
+            }
+        }
+        this.clients.delete(clientId);
+    }
+}
 
-// Middleware setup
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Security headers middleware
-app.use((req, res, next) => {
-    res.set({
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'SAMEORIGIN',
-        'X-XSS-Protection': '1; mode=block',
-        'Referrer-Policy': 'no-referrer',
-        'X-DNS-Prefetch-Control': 'on',
-        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-        'Permissions-Policy': 'interest-cohort=()',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-    });
-    next();
-});
-
-// Initialize WebSocket manager
-const wsManager = new WebSocketManager(wss);
-
-// Content transformer
 class ContentTransformer {
     static transformHtml(html, baseUrl) {
         const gameSupport = `
@@ -946,6 +929,23 @@ app.get('/health', (req, res) => {
     });
 });
 
+// Security headers middleware
+app.use((req, res, next) => {
+    res.set({
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'SAMEORIGIN',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'no-referrer',
+        'X-DNS-Prefetch-Control': 'on',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+        'Permissions-Policy': 'interest-cohort=()',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+    });
+    next();
+});
+
 // Start server
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
@@ -962,4 +962,13 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     if (!DEBUG) process.exit(1);
+});
+
+// Graceful shutdown >-<
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Performing graceful shutdown...');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
 });
