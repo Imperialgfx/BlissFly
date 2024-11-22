@@ -270,509 +270,480 @@ app.get('/', (req, res) => {
     performanceMonitor.startTimer('mainRoute');
     
     const htmlContent = `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>BlissFly 🪰</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-        <style>
-            :root {
-                --primary-color: #2196F3;
-                --hover-color: #1976D2;
-                --background: #f5f5f5;
-                --card-background: #ffffff;
-                --error-color: #ff4444;
-                --poop-color: #8B4513;
-                --poop-shadow: rgba(139, 69, 19, 0.4);
-            }
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BlissFly 🪰</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --hover-color: #1976D2;
+            --background: #f5f5f5;
+            --card-background: #ffffff;
+            --error-color: #ff4444;
+            --poop-color: #8B4513;
+            --poop-shadow: rgba(139, 69, 19, 0.4);
+        }
 
-            * {
-                box-sizing: border-box;
-                margin: 0;
-                padding: 0;
-            }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-                line-height: 1.6;
-                background: var(--background);
-                color: #333;
-                min-height: 100vh;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                overflow: hidden;
-                position: relative;
-            }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            background: var(--background);
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
 
-            .container {
-                width: 100%;
-                max-width: 600px;
-                padding: 2rem;
-                perspective: 1000px;
-                position: relative;
-                z-index: 1;
-            }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 2rem;
+            perspective: 1000px;
+            position: relative;
+            z-index: 1;
+        }
 
-            .proxy-card {
-                background: var(--card-background);
-                border-radius: 10px;
-                padding: 2rem;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                position: relative;
-                transition: transform 0.3s ease, box-shadow 0.3s ease;
-                transform-style: preserve-3d;
-                z-index: 2;
-            }
+        .proxy-card {
+            background: var(--card-background);
+            border-radius: 10px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transform-style: preserve-3d;
+            z-index: 2;
+        }
 
-            .proxy-form {
-                position: relative;
-                z-index: 2;
-                display: flex;
-                flex-direction: column;
-                gap: 1rem;
-            }
+        .proxy-form {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
 
-            .url-input {
-                width: 100%;
-                padding: 12px;
-                border: 2px solid #e0e0e0;
-                border-radius: 6px;
-                font-size: 16px;
-                transition: all 0.3s ease;
-            }
+        .url-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
 
-            .url-input:focus {
-                border-color: var(--primary-color);
-                outline: none;
-                box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
-            }
+        .url-input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        }
 
-            .submit-btn {
-                background: var(--primary-color);
-                color: white;
-                border: none;
-                padding: 12px;
-                border-radius: 6px;
-                font-size: 16px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-            }
+        .submit-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
 
-            .submit-btn:hover {
-                background: var(--hover-color);
-                transform: translateY(-2px);
-            }
+        .submit-btn:hover {
+            background: var(--hover-color);
+            transform: translateY(-2px);
+        }
 
-            .title {
-                text-align: center;
-                margin-bottom: 2rem;
-                color: var(--primary-color);
-                font-size: 2.5em;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                position: relative;
-                z-index: 2;
-            }
+        .title {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: var(--primary-color);
+            font-size: 2.5em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 2;
+        }
 
-            .title-fly {
-                margin-left: 10px;
-                font-size: 1.2em;
-                animation: flyHover 2s infinite;
-            }
+        .title-fly {
+            margin-left: 10px;
+            font-size: 1.2em;
+            animation: flyHover 2s infinite;
+        }
 
-            @keyframes flyHover {
-                0%, 100% { transform: translate(0, 0); }
-                50% { transform: translate(5px, -5px); }
-            }
+        @keyframes flyHover {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(5px, -5px); }
+        }
 
-            .poop-splotch {
-                position: absolute;
-                background: var(--poop-color);
-                border-radius: 50%;
-                opacity: 0;
-                transform: scale(0);
-                transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                pointer-events: none;
-                z-index: 1;
-                filter: blur(1px);
-            }
+        .poop-splotch {
+            position: absolute;
+            background: var(--poop-color);
+            border-radius: 50%;
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+            z-index: 1;
+            filter: blur(1px);
+        }
 
-            .poop-splotch.active {
-                opacity: 0.6;
-                transform: scale(1);
-            }
+        .poop-splotch.active {
+            opacity: 0.6;
+            transform: scale(1);
+        }
 
-            .splotch-fly {
-                position: absolute;
-                font-size: 12px;
-                animation: flyBuzz 2s infinite;
-                z-index: 2;
-                pointer-events: none;
-            }
+        .splotch-fly {
+            position: absolute;
+            font-size: 12px;
+            animation: flyBuzz 2s infinite;
+            z-index: 2;
+            pointer-events: none;
+        }
 
-            @keyframes flyBuzz {
-                0%, 100% { transform: translate(0, 0) rotate(0deg); }
-                25% { transform: translate(3px, -3px) rotate(10deg); }
-                50% { transform: translate(-2px, -5px) rotate(-15deg); }
-                75% { transform: translate(-4px, 2px) rotate(5deg); }
-            }
+        @keyframes flyBuzz {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(3px, -3px) rotate(10deg); }
+            50% { transform: translate(-2px, -5px) rotate(-15deg); }
+            75% { transform: translate(-4px, 2px) rotate(5deg); }
+        }
 
-            .mouse-fly {
-                position: fixed;
-                width: 20px;
-                height: 20px;
-                pointer-events: none;
-                z-index: 1000;
-                transition: all 0.1s ease;
-                font-size: 20px;
-                transform-origin: center;
-                will-change: transform;
-            }
+        .mouse-fly {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+            z-index: 1000;
+            transition: all 0.1s ease;
+            font-size: 20px;
+            transform-origin: center;
+            will-change: transform;
+        }
 
-            .fly-particle {
-                position: fixed;
-                width: 4px;
-                height: 4px;
-                background: rgba(0, 255, 0, 0.3);
-                border-radius: 50%;
-                pointer-events: none;
-                animation: particleFade 1s ease-out forwards;
-                z-index: 999;
-            }
+        .fly-particle {
+            position: fixed;
+            width: 4px;
+            height: 4px;
+            background: rgba(0, 255, 0, 0.3);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: particleFade 1s ease-out forwards;
+            z-index: 999;
+        }
 
-            @keyframes particleFade {
-                0% { 
-                    transform: scale(1) translate(0, 0); 
-                    opacity: 0.6; 
-                }
-                100% { 
-                    transform: scale(0) translate(var(--moveX, 10px), var(--moveY, -10px)); 
-                    opacity: 0; 
-                }
+        @keyframes particleFade {
+            0% { 
+                transform: scale(1) translate(0, 0); 
+                opacity: 0.6; 
             }
+            100% { 
+                transform: scale(0) translate(var(--moveX, 10px), var(--moveY, -10px)); 
+                opacity: 0; 
+            }
+        }
 
-            .info-warning {
-                background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-                border: 1px solid #dee2e6;
-                border-radius: 10px 10px 0 0;
-                padding: 15px;
-                margin-top: 20px;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                transition: all 0.3s ease;
-                user-select: none;
-                position: relative;
-                z-index: 2;
-            }
+        .info-warning {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border: 1px solid #dee2e6;
+            border-radius: 10px 10px 0 0;
+            padding: 15px;
+            margin-top: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.3s ease;
+            user-select: none;
+            position: relative;
+            z-index: 2;
+        }
 
-            .info-warning:hover {
-                background: linear-gradient(135deg, #e9ecef, #dee2e6);
-            }
+        .info-warning:hover {
+            background: linear-gradient(135deg, #e9ecef, #dee2e6);
+        }
 
-            .info-content {
-                background: white;
-                border: 1px solid #dee2e6;
-                border-top: none;
-                border-radius: 0 0 10px 10px;
-                padding: 15px;
-                margin-top: -1px;
-                transform-origin: top;
-                transform: scaleY(0);
-                opacity: 0;
-                transition: all 0.3s ease;
-                position: relative;
-                z-index: 1;
-            }
+        .info-content {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-top: none;
+            border-radius: 0 0 10px 10px;
+            padding: 15px;
+            margin-top: -1px;
+            transform-origin: top;
+            transform: scaleY(0);
+            opacity: 0;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 1;
+        }
 
-            .info-content.active {
-                transform: scaleY(1);
-                opacity: 1;
-            }
+        .info-content.active {
+            transform: scaleY(1);
+            opacity: 1;
+        }
 
-            .error-popup {
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: var(--error-color);
-                color: white;
-                padding: 15px 25px;
-                border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(255, 68, 68, 0.2);
-                transform: translateX(120%);
-                animation: slideIn 0.3s forwards, slideOut 0.3s 2.7s forwards;
-                z-index: 1000;
-            }
+        .error-popup {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--error-color);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(255, 68, 68, 0.2);
+            transform: translateX(120%);
+            animation: slideIn 0.3s forwards, slideOut 0.3s 2.7s forwards;
+            z-index: 1000;
+        }
 
-            @keyframes slideIn {
-                to { transform: translateX(0); }
-            }
+        @keyframes slideIn {
+            to { transform: translateX(0); }
+        }
 
-            @keyframes slideOut {
-                to { transform: translateX(120%); }
-            }
+        @keyframes slideOut {
+            to { transform: translateX(120%); }
+        }
 
-            .dropdown-arrow {
-                transition: transform 0.3s ease;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="proxy-card">
-                <h1 class="title">BlissFly<span class="title-fly">🪰</span></h1>
-                <form id="proxyForm" class="proxy-form">
-                    <input type="text" 
-                           class="url-input" 
-                           placeholder="Enter website URL" 
-                           required
-                           autocomplete="off"
-                           spellcheck="false">
-                    <button type="submit" class="submit-btn">Browse</button>
-                </form>
-            </div>
-            <div class="info-warning">
-                <div class="warning-icon">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <span>Important Information</span>
-                </div>
-                <i class="fas fa-chevron-down dropdown-arrow"></i>
-            </div>
-            <div class="info-content">
-                This proxy only searches with URLs please use a URL when searching (example.com)
-            </div>
+        .dropdown-arrow {
+            transition: transform 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="proxy-card">
+            <h1 class="title">BlissFly<span class="title-fly">🪰</span></h1>
+            <form id="proxyForm" class="proxy-form">
+                <input type="text" 
+                       class="url-input" 
+                       placeholder="Enter website URL" 
+                       required
+                       autocomplete="off"
+                       spellcheck="false">
+                <button type="submit" class="submit-btn">Browse</button>
+            </form>
         </div>
+        <div class="info-warning">
+            <div class="warning-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>Important Information</span>
+            </div>
+            <i class="fas fa-chevron-down dropdown-arrow"></i>
+        </div>
+        <div class="info-content">
+            This proxy only searches with URLs please use a URL when searching (example.com)
+        </div>
+    </div>
 
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                console.log('Initializing BlissFly interface...');
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Initializing BlissFly interface...');
+            
+            const form = document.getElementById('proxyForm');
+            const input = form.querySelector('input');
+            const proxyCard = document.querySelector('.proxy-card');
+            const infoWarning = document.querySelector('.info-warning');
+            const infoContent = document.querySelector('.info-content');
+            const dropdownArrow = document.querySelector('.dropdown-arrow');
+            const container = document.querySelector('.container');
+
+            const flyFollower = document.createElement('div');
+            flyFollower.className = 'mouse-fly';
+            flyFollower.innerHTML = '🪰';
+            document.body.appendChild(flyFollower);
+
+            let lastMouseX = 0;
+            let lastMouseY = 0;
+            let flyRotation = 0;
+
+            const splotches = [];
+            const maxSplotches = 5;
+            let lastSplotchTime = 0;
+            const splotchCooldown = 100;
+
+            function createSplotch(x, y, intensity) {
+                const now = Date.now();
+                if (now - lastSplotchTime < splotchCooldown) return;
+                lastSplotchTime = now;
+
+                const splotch = document.createElement('div');
+                splotch.className = 'poop-splotch';
+                const size = 20 + (intensity * 30);
                 
-                const form = document.getElementById('proxyForm');
-                const input = form.querySelector('input');
-                const proxyCard = document.querySelector('.proxy-card');
-                const infoWarning = document.querySelector('.info-warning');
-                const infoContent = document.querySelector('.info-content');
-                const dropdownArrow = document.querySelector('.dropdown-arrow');
-                const container = document.querySelector('.container');
-
-                // Create mouse following fly
-                const flyFollower = document.createElement('div');
-                flyFollower.className = 'mouse-fly';
-                flyFollower.innerHTML = '🪰';
-                document.body.appendChild(flyFollower);
-
-                // Initialize tracking variables
-                let lastMouseX = 0;
-                let lastMouseY = 0;
-                let flyRotation = 0;
-
-                // Splotch management
-                const splotches = [];
-                const maxSplotches = 5;
-                let lastSplotchTime = 0;
-                const splotchCooldown = 100; // Milliseconds between splotches
-
-                function createSplotch(x, y, intensity) {
-                    const now = Date.now();
-                    if (now - lastSplotchTime < splotchCooldown) return;
-                    lastSplotchTime = now;
-
-                    const splotch = document.createElement('div');
-                    splotch.className = 'poop-splotch';
-                    const size = 20 + (intensity * 30);
-                    
-                    splotch.style.width = size + 'px';
-                    splotch.style.height = size + 'px';
-                    splotch.style.left = x + 'px';
-                    splotch.style.top = y + 'px';
-                    
-                    // Add flies to splotch
-                    const flyCount = Math.floor(intensity * 3) + 1;
-                    for(let i = 0; i < flyCount; i++) {
-                        const fly = document.createElement('span');
-                        fly.className = 'splotch-fly';
-                        fly.innerHTML = '🪰';
-                        fly.style.left = (Math.random() * size) + 'px';
-                        fly.style.top = (Math.random() * size) + 'px';
-                        splotch.appendChild(fly);
-                    }
-
-                    container.appendChild(splotch);
-                    requestAnimationFrame(() => splotch.classList.add('active'));
-                    
-                    splotches.push(splotch);
-                    if(splotches.length > maxSplotches) {
-                        const oldSplotch = splotches.shift();
-                        oldSplotch.classList.remove('active');
-                        setTimeout(() => oldSplotch.remove(), 300);
-                    }
+                splotch.style.width = size + 'px';
+                splotch.style.height = size + 'px';
+                splotch.style.left = x + 'px';
+                splotch.style.top = y + 'px';
+                
+                const flyCount = Math.floor(intensity * 3) + 1;
+                for(let i = 0; i < flyCount; i++) {
+                    const fly = document.createElement('span');
+                    fly.className = 'splotch-fly';
+                    fly.innerHTML = '🪰';
+                    fly.style.left = (Math.random() * size) + 'px';
+                    fly.style.top = (Math.random() * size) + 'px';
+                    splotch.appendChild(fly);
                 }
 
-                // particle effect for fly
-                function createParticle(x, y, mouseSpeed) {
-                    const particle = document.createElement('div');
-                    particle.className = 'fly-particle';
-                    
-                    // Calculate random movement
-                    const moveX = (Math.random() - 0.5) * 20 * mouseSpeed;
-                    const moveY = (Math.random() - 0.5) * 20 * mouseSpeed;
-                    
-                    particle.style.left = x + 'px';
-                    particle.style.top = y + 'px';
-                    particle.style.setProperty('--moveX', moveX + 'px');
-                    particle.style.setProperty('--moveY', moveY + 'px');
-                    
-                    document.body.appendChild(particle);
-                    setTimeout(() => particle.remove(), 1000);
+                container.appendChild(splotch);
+                requestAnimationFrame(() => splotch.classList.add('active'));
+                
+                splotches.push(splotch);
+                if(splotches.length > maxSplotches) {
+                    const oldSplotch = splotches.shift();
+                    oldSplotch.classList.remove('active');
+                    setTimeout(() => oldSplotch.remove(), 300);
+                }
+            }
+
+            function createParticle(x, y, mouseSpeed) {
+                const particle = document.createElement('div');
+                particle.className = 'fly-particle';
+                
+                const moveX = (Math.random() - 0.5) * 20 * mouseSpeed;
+                const moveY = (Math.random() - 0.5) * 20 * mouseSpeed;
+                
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+                particle.style.setProperty('--moveX', moveX + 'px');
+                particle.style.setProperty('--moveY', moveY + 'px');
+                
+                document.body.appendChild(particle);
+                setTimeout(() => particle.remove(), 1000);
+            }
+
+            document.addEventListener('mousemove', (e) => {
+                const mouseSpeed = Math.sqrt(
+                    Math.pow(e.clientX - lastMouseX, 2) + 
+                    Math.pow(e.clientY - lastMouseY, 2)
+                ) / 10;
+                
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+
+                const rect = proxyCard.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                const tiltX = (y - centerY) / 20;
+                const tiltY = (centerX - x) / 20;
+                
+                const distance = Math.sqrt(
+                    Math.pow(x - centerX, 2) + 
+                    Math.pow(y - centerY, 2)
+                );
+                
+                const maxDistance = Math.sqrt(
+                    Math.pow(rect.width / 2, 2) + 
+                    Math.pow(rect.height / 2, 2)
+                );
+                
+                const intensity = Math.min(distance / maxDistance, 1);
+                
+                proxyCard.style.transform = 'perspective(1000px) rotateX(' + tiltX + 'deg) rotateY(' + tiltY + 'deg)';
+                proxyCard.style.boxShadow = '0 ' + (4 + (intensity * 8)) + 'px ' + (6 + (intensity * 12)) + 'px rgba(139, 69, 19, ' + (intensity * 0.4) + ')';
+                
+                if(intensity > 0.5 && mouseSpeed > 0.5) {
+                    const splotchX = rect.left + (Math.random() * rect.width);
+                    const splotchY = rect.bottom + (Math.random() * 50);
+                    createSplotch(splotchX, splotchY, intensity);
                 }
 
-                // Enhanced tilt effect with poop splotches
-                document.addEventListener('mousemove', (e) => {
-                    // Calculate mouse speed
-                    const mouseSpeed = Math.sqrt(
-                        Math.pow(e.clientX - lastMouseX, 2) + 
-                        Math.pow(e.clientY - lastMouseY, 2)
-                    ) / 10;
-                    
-                    lastMouseX = e.clientX;
-                    lastMouseY = e.clientY;
-
-                    const rect = proxyCard.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    
-                    const centerX = rect.width / 2;
-                    const centerY = rect.height / 2;
-                    
-                    const tiltX = (y - centerY) / 20;
-                    const tiltY = (centerX - x) / 20;
-                    
-                    const distance = Math.sqrt(
-                        Math.pow(x - centerX, 2) + 
-                        Math.pow(y - centerY, 2)
-                    );
-                    
-                    const maxDistance = Math.sqrt(
-                        Math.pow(rect.width / 2, 2) + 
-                        Math.pow(rect.height / 2, 2)
-                    );
-                    
-                    const intensity = Math.min(distance / maxDistance, 1);
-                    
-                    // Apply 3D transform
-                    proxyCard.style.transform = 'perspective(1000px) rotateX(' + tiltX + 'deg) rotateY(' + tiltY + 'deg)';
-                    proxyCard.style.boxShadow = '0 ' + (4 + (intensity * 8)) + 'px ' + (6 + (intensity * 12)) + 'px rgba(139, 69, 19, ' + (intensity * 0.4) + ')';
-                    
-                    // Create splotches based on intensity and mouse speed
-                    if(intensity > 0.5 && mouseSpeed > 0.5) {
-                        const splotchX = rect.left + (Math.random() * rect.width);
-                        const splotchY = rect.bottom + (Math.random() * 50);
-                        createSplotch(splotchX, splotchY, intensity);
-                    }
-
-                    // Update fly follower with rotation based on movement
-                    flyRotation += (mouseSpeed * (Math.random() > 0.5 ? 1 : -1));
-                    flyFollower.style.transform = 'translate(' + (e.clientX - 10) + 'px, ' + (e.clientY - 10) + 'px) rotate(' + flyRotation + 'deg)';
-                    
-                    // Create particles based on mouse speed
-                    if(mouseSpeed > 0.5 && Math.random() < 0.2) {
-                        createParticle(e.clientX, e.clientY, mouseSpeed);
-                    }
-                });
-
-                // Reset transform on mouse leave
-                proxyCard.addEventListener('mouseleave', () => {
-                    proxyCard.style.transform = 'perspective(1000px) rotateX(0) rotateY(0)';
-                    proxyCard.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
-                });
-
-                // Info dropdown
-                infoWarning.addEventListener('click', () => {
-                    infoContent.classList.toggle('active');
-                    dropdownArrow.style.transform = infoContent.classList.contains('active') 
-                        ? 'rotate(180deg)' 
-                        : 'rotate(0deg)';
-                });
-
-                // fixed form submission with URL validation and processing
-                form.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    let url = input.value.trim();
-                    
-                    // Remove any protocol prefix if present
-                    url = url.replace(/^(https?:\/\/)?(www\.)?/, '');
-                    
-                    if (!url) {
-                        showError('Please enter a URL');
-                        return;
-                    }
-
-                    try {
-                        // Create loading animation
-                        const submitBtn = form.querySelector('.submit-btn');
-                        const originalText = submitBtn.textContent;
-                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                        submitBtn.disabled = true;
-
-                        const encodedUrl = Buffer.from('https://' + url).toString('base64');
-                        
-                        // Add transition effect before navigation
-                        document.body.style.opacity = '0';
-                        document.body.style.transition = 'opacity 0.3s ease';
-                        
-                        setTimeout(() => {
-                            window.location.href = '/proxy?url=' + encodedUrl;
-                        }, 300);
-
-                    } catch (error) {
-                        console.error('URL processing error:', error);
-                        showError('Invalid URL format');
-                        submitBtn.textContent = originalText;
-                        submitBtn.disabled = false;
-                    }
-                });
-
-                function showError(message) {
-                    const existingError = document.querySelector('.error-popup');
-                    if (existingError) existingError.remove();
-
-                    const errorPopup = document.createElement('div');
-                    errorPopup.className = 'error-popup';
-                    errorPopup.textContent = message;
-                    
-                    // Add shake animation
-                    errorPopup.style.animation = 'slideIn 0.3s forwards, shake 0.5s ease-in-out, slideOut 0.3s 2.7s forwards';
-                    
-                    document.body.appendChild(errorPopup);
+                flyRotation += (mouseSpeed * (Math.random() > 0.5 ? 1 : -1));
+                flyFollower.style.transform = 'translate(' + (e.clientX - 10) + 'px, ' + (e.clientY - 10) + 'px) rotate(' + flyRotation + 'deg)';
+                
+                if(mouseSpeed > 0.5 && Math.random() < 0.2) {
+                    createParticle(e.clientX, e.clientY, mouseSpeed);
                 }
-
-                // Add shake animation keyframes
-                const style = document.createElement('style');
-                style.textContent = 
-                    '0%, 100% { transform: translateX(0); }' +
-                    '10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }' +
-                    '20%, 40%, 60%, 80% { transform: translateX(5px); }';
-                document.head.appendChild(style);
-                    }
-                `;
-
-                // focus input on page load with smooth transition
-                setTimeout(() => {
-                    input.focus();
-                    input.style.transition = 'all 0.3s ease';
-                }, 100);
-
-                // Initialize performance monitoring
-                console.log('BlissFly interface initialized successfully');
             });
-        </script>
-    </body>
-    </html>`;
+
+            proxyCard.addEventListener('mouseleave', () => {
+                proxyCard.style.transform = 'perspective(1000px) rotateX(0) rotateY(0)';
+                proxyCard.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+            });
+
+            infoWarning.addEventListener('click', () => {
+                infoContent.classList.toggle('active');
+                dropdownArrow.style.transform = infoContent.classList.contains('active') 
+                    ? 'rotate(180deg)' 
+                    : 'rotate(0deg)';
+            });
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                let url = input.value.trim();
+                
+                url = url.replace(/^(https?:\/\/)?(www\.)?/, '');
+                
+                if (!url) {
+                    showError('Please enter a URL');
+                    return;
+                }
+
+                try {
+                    const submitBtn = form.querySelector('.submit-btn');
+                    const originalText = submitBtn.textContent;
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    submitBtn.disabled = true;
+
+                    const encodedUrl = btoa('https://' + url);
+                    
+                    document.body.style.opacity = '0';
+                    document.body.style.transition = 'opacity 0.3s ease';
+                    
+                    setTimeout(() => {
+                        window.location.href = '/proxy?url=' + encodedUrl;
+                    }, 300);
+
+                } catch (error) {
+                    console.error('URL processing error:', error);
+                    showError('Invalid URL format');
+                    submitBtn.textContent = originalText;
+                    submitBtn.disabled = false;
+                }
+            });
+
+            function showError(message) {
+                const existingError = document.querySelector('.error-popup');
+                if (existingError) existingError.remove();
+
+                const errorPopup = document.createElement('div');
+                errorPopup.className = 'error-popup';
+                errorPopup.textContent = message;
+                
+                document.body.appendChild(errorPopup);
+            }
+
+            setTimeout(() => {
+                input.focus();
+                input.style.transition = 'all 0.3s ease';
+            }, 100);
+
+            console.log('BlissFly interface initialized successfully');
+        });
+    </script>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(htmlContent);
+});
 
     res.setHeader('Content-Type', 'text/html');
     res.send(htmlContent);
