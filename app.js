@@ -300,52 +300,6 @@ class WebSocketManager {
         }
     }
 
-// Initialize main application components
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-const cache = new AdvancedCache({
-    maxSize: MAX_CACHE_SIZE,
-    maxAge: CACHE_TTL
-});
-
-// URL utilities
-const normalizeUrl = (url) => {
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        return `https://${url}`;
-    }
-    return url;
-};
-
-const obfuscateUrl = (url) => Buffer.from(url).toString('base64');
-const deobfuscateUrl = (encoded) => Buffer.from(encoded, 'base64').toString('utf8');
-
-// Middleware setup
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Security headers middleware
-app.use((req, res, next) => {
-    res.set({
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'SAMEORIGIN',
-        'X-XSS-Protection': '1; mode=block',
-        'Referrer-Policy': 'no-referrer',
-        'X-DNS-Prefetch-Control': 'on',
-        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-        'Permissions-Policy': 'interest-cohort=()',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-    });
-    next();
-});
-
-// Initialize WebSocket manager
-const wsManager = new WebSocketManager(wss);
-
-// Content transformer
 class ContentTransformer {
     static transformHtml(html, baseUrl) {
         const gameSupport = `
@@ -955,6 +909,23 @@ app.get('/health', (req, res) => {
     });
 });
 
+// Security headers middleware
+app.use((req, res, next) => {
+    res.set({
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'SAMEORIGIN',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'no-referrer',
+        'X-DNS-Prefetch-Control': 'on',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+        'Permissions-Policy': 'interest-cohort=()',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+    });
+    next();
+});
+
 // Start server
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
@@ -971,4 +942,13 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     if (!DEBUG) process.exit(1);
+});
+
+// Graceful shutdown >-<
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Performing graceful shutdown...');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
 });
