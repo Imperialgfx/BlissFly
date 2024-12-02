@@ -344,20 +344,12 @@ class WebSocketManager {
 
 class ContentTransformer {
     static async transformHtml(html, baseUrl) {
-        // Add meta viewport for better mobile display
         const viewportMeta = '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
-        
-        // Add CSP headers to allow necessary resources
         const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src * data: blob: ws: wss: \'unsafe-inline\' \'unsafe-eval\'">';
-        
-        // Enhanced base tag with proper URL handling
         const baseTag = `<base href="${baseUrl}">`;
-        
-        // Inject required scripts for dynamic content
         const dynamicLoader = `
             <script>
                 window.addEventListener('DOMContentLoaded', () => {
-                    // Handle dynamic content loading
                     const observer = new MutationObserver((mutations) => {
                         mutations.forEach((mutation) => {
                             if (mutation.type === 'childList') {
@@ -413,13 +405,12 @@ class ContentTransformer {
                 }
             );
     }
-}
 
     static transformCss(css, baseUrl) {
         return css.replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
             try {
                 const absoluteUrl = new URL(url, baseUrl).href;
-                const encodedUrl = obfuscateUrl(absoluteUrl);
+                const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
                 return `url('/watch?url=${encodedUrl}')`;
             } catch (e) {
                 return match;
