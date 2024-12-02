@@ -9,8 +9,6 @@ const WebSocket = require('ws');
 const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
 
 // Initialize express and server
 const app = express();
@@ -48,12 +46,7 @@ const WS_MESSAGES = {
 };
 
 // Middleware
-app.use(compression());
 app.use(cors());
-app.use(rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100
-}));
 
 // Security headers middleware
 app.use((req, res, next) => {
