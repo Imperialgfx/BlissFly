@@ -9,6 +9,30 @@ const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
 
+// Initialize express and server
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Middleware configurations
+app.use(express.json());
+app.use(cors());
+app.use(express.urlencoded({ extended: true }));
+
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    next();
+});
+
+const handleResourceType = (contentType) => {
+    if (contentType.includes('javascript')) return 'application/javascript';
+    if (contentType.includes('css')) return 'text/css';
+    if (contentType.includes('html')) return 'text/html';
+    return contentType;
+};
+
 function obfuscateUrl(url) {
     return btoa(encodeURIComponent(url));
 }
@@ -25,11 +49,6 @@ function normalizeUrl(url) {
         throw new Error('Invalid URL format');
     }
 }
-
-// Initialize express and server
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
 // Constants and configurations
 const PORT = process.env.PORT || 10000;
@@ -862,31 +881,36 @@ app.get('/watch', async (req, res) => {
         
         const response = await fetch(normalizedUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive'
             }
         });
 
-        const contentType = response.headers.get('content-type');
-        res.set('Content-Type', contentType);
+        const contentType = response.headers.get('content-type') || '';
+        const processedContentType = handleResourceType(contentType);
+        
+        res.set('Content-Type', processedContentType);
 
-        // Stream the response directly for non-text content
-        if (!contentType || !contentType.includes('text')) {
+        if (!contentType.includes('text') && !contentType.includes('javascript') && !contentType.includes('css')) {
             return response.body.pipe(res);
         }
 
-        const content = await response.text();
-        
+        let content = await response.text();
+
         if (contentType.includes('html')) {
-            res.send(await ContentTransformer.transformHtml(content, normalizedUrl));
+            content = await ContentTransformer.transformHtml(content, normalizedUrl);
         } else if (contentType.includes('css')) {
-            res.send(ContentTransformer.transformCss(content, normalizedUrl));
+            content = ContentTransformer.transformCss(content, normalizedUrl);
         } else if (contentType.includes('javascript')) {
-            res.send(ContentTransformer.transformJavaScript(content));
-        } else {
-            res.send(content);
+            content = ContentTransformer.transformJavaScript(content);
         }
 
+        res.send(content);
+
     } catch (error) {
+        console.error('Proxy Error:', error);
         res.status(500).send(`Error loading content: ${error.message}`);
     }
 });
