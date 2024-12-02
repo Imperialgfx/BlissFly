@@ -850,7 +850,6 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Watch route handler
 app.get('/watch', async (req, res) => {
     try {
         const encodedUrl = req.query.url;
@@ -861,68 +860,34 @@ app.get('/watch', async (req, res) => {
         const url = deobfuscateUrl(encodedUrl);
         const normalizedUrl = normalizeUrl(url);
         
-        const cachedResponse = cache.get(normalizedUrl);
-        if (cachedResponse) {
-            return res.send(cachedResponse);
-        }
-
         const response = await fetch(normalizedUrl, {
-            agent: new https.Agent({
-                rejectUnauthorized: false,
-                secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT
-            })
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
         });
 
-        const contentType = response.headers.get('content-type') || '';
-        const isProcessableType = PROCESSABLE_TYPES.some(type => contentType.includes(type));
+        const contentType = response.headers.get('content-type');
+        res.set('Content-Type', contentType);
 
-        if (!isProcessableType) {
-            response.body.pipe(res);
-            return;
+        // Stream the response directly for non-text content
+        if (!contentType || !contentType.includes('text')) {
+            return response.body.pipe(res);
         }
 
-        let content = await response.text();
-
-        if (contentType.includes('text/html')) {
-            content = ContentTransformer.transformHtml(content, normalizedUrl);
-        } else if (contentType.includes('text/css')) {
-            content = ContentTransformer.transformCss(content, normalizedUrl);
+        const content = await response.text();
+        
+        if (contentType.includes('html')) {
+            res.send(await ContentTransformer.transformHtml(content, normalizedUrl));
+        } else if (contentType.includes('css')) {
+            res.send(ContentTransformer.transformCss(content, normalizedUrl));
         } else if (contentType.includes('javascript')) {
-            content = ContentTransformer.transformJavaScript(content);
+            res.send(ContentTransformer.transformJavaScript(content));
+        } else {
+            res.send(content);
         }
-
-        cache.set(normalizedUrl, content);
-        res.send(content);
 
     } catch (error) {
-        DEBUG && console.error('Proxy error:', error);
-        res.status(500).send(`
-            <div style="
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: linear-gradient(135deg, #ff4444, #ff6b6b);
-                color: white;
-                padding: 20px;
-                border-radius: 10px;
-                box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
-                text-align: center;
-                font-family: sans-serif;
-            ">
-                <h2>Error Loading Page</h2>
-                <p>${error.message}</p>
-                <button onclick="window.location.href='/'" style="
-                    background: white;
-                    color: #ff4444;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 5px;
-                    margin-top: 15px;
-                    cursor: pointer;
-                ">Return Home</button>
-            </div>
-        `);
+        res.status(500).send(`Error loading content: ${error.message}`);
     }
 });
 
