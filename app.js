@@ -343,152 +343,69 @@ class WebSocketManager {
 }
 
 class ContentTransformer {
-    static transformHtml(html, baseUrl) {
-        const gameSupport = `
+    static async transformHtml(html, baseUrl) {
+        // Add meta viewport for better mobile display
+        const viewportMeta = '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
+        
+        // Add CSP headers to allow necessary resources
+        const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src * data: blob: ws: wss: \'unsafe-inline\' \'unsafe-eval\'">';
+        
+        // Enhanced base tag with proper URL handling
+        const baseTag = `<base href="${baseUrl}">`;
+        
+        // Inject required scripts for dynamic content
+        const dynamicLoader = `
             <script>
-                (function() {
-                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const ws = new WebSocket(wsProtocol + '//' + window.location.host);
-                    
-                    let gameState = null;
-                    let gameFrame = null;
-
-                    function detectAndSetupGame() {
-                        const frames = Array.from(document.getElementsByTagName('iframe'));
-                        const gameFrames = frames.filter(frame => {
-                            const src = frame.src.toLowerCase();
-                            return src.includes('game') || 
-                                   src.includes('play') || 
-                                   frame.id.includes('game') || 
-                                   frame.className.includes('game');
-                        });
-
-                        if (gameFrames.length > 0) {
-                            gameFrame = gameFrames[0];
-                            initializeGame();
-                        }
-                    }
-
-                    function initializeGame() {
-                        if (!gameFrame) return;
-
-                        const gameType = detectGameType(gameFrame);
-                        ws.send(JSON.stringify({
-                            type: 'gameInit',
-                            gameType: gameType,
-                            gameId: crypto.randomUUID(),
-                            settings: {
-                                url: gameFrame.src,
-                                dimensions: {
-                                    width: gameFrame.width,
-                                    height: gameFrame.height
-                                }
+                window.addEventListener('DOMContentLoaded', () => {
+                    // Handle dynamic content loading
+                    const observer = new MutationObserver((mutations) => {
+                        mutations.forEach((mutation) => {
+                            if (mutation.type === 'childList') {
+                                handleNewElements(mutation.addedNodes);
                             }
-                        }));
+                        });
+                    });
 
-                        setupGameMessageHandling();
-                    }
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                    });
 
-                    function detectGameType(frame) {
-                        const src = frame.src.toLowerCase();
-                        if (src.includes('unity')) return 'unity';
-                        if (src.includes('html5')) return 'html5';
-                        return 'default';
-                    }
-
-                    function setupGameMessageHandling() {
-                        window.addEventListener('message', function(event) {
-                            if (event.source === gameFrame.contentWindow) {
-                                ws.send(JSON.stringify({
-                                    type: 'gameAction',
-                                    action: event.data
-                                }));
+                    function handleNewElements(elements) {
+                        elements.forEach((element) => {
+                            if (element.tagName === 'SCRIPT') {
+                                loadScript(element);
+                            }
+                            if (element.tagName === 'IMG') {
+                                fixImageSource(element);
                             }
                         });
                     }
 
-                    ws.onmessage = function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            handleWebSocketMessage(data);
-                        } catch (error) {
-                            console.error('Game message handling error:', error);
-                        }
-                    };
-
-                    function handleWebSocketMessage(data) {
-                        switch(data.type) {
-                            case 'gameStateUpdated':
-                                updateGameState(data.gameState);
-                                break;
-                            case 'actionProcessed':
-                                handleGameAction(data);
-                                break;
-                            case 'error':
-                                console.error('Game error:', data.message);
-                                break;
+                    function loadScript(script) {
+                        if (script.src) {
+                            const newScript = document.createElement('script');
+                            newScript.src = '/watch?url=' + btoa(encodeURIComponent(script.src));
+                            script.parentNode.replaceChild(newScript, script);
                         }
                     }
 
-                    function updateGameState(newState) {
-                        gameState = newState;
-                        if (gameFrame) {
-                            gameFrame.contentWindow.postMessage({
-                                type: 'stateUpdate',
-                                state: gameState
-                            }, '*');
+                    function fixImageSource(img) {
+                        if (img.src && !img.src.startsWith('data:')) {
+                            img.src = '/watch?url=' + btoa(encodeURIComponent(img.src));
                         }
                     }
-
-                    function handleGameAction(data) {
-                        if (gameFrame) {
-                            gameFrame.contentWindow.postMessage({
-                                type: 'actionUpdate',
-                                action: data.action,
-                                result: data.result
-                            }, '*');
-                        }
-                    }
-
-                    document.addEventListener('click', function(e) {
-                        const link = e.target.closest('a');
-                        if (link) {
-                            const href = link.getAttribute('href');
-                            if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                
-                                try {
-                                    const baseUrl = window.location.href.split('?url=')[1];
-                                    const decodedBase = decodeURIComponent(atob(baseUrl));
-                                    const absoluteUrl = new URL(href, decodedBase).href;
-                                    const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
-                                    window.location.href = '/watch?url=' + encodedUrl;
-                                } catch (error) {
-                                    console.error('URL processing error:', error);
-                                    showError('Invalid URL format');
-                                }
-                            }
-                        }
-                    }, true);
-
-                    if (document.readyState === 'loading') {
-                        document.addEventListener('DOMContentLoaded', detectAndSetupGame);
-                    } else {
-                        detectAndSetupGame();
-                    }
-                })();
+                });
             </script>
         `;
 
         return html
-            .replace(/<head>/i, `<head><base href="${baseUrl}">`)
-            .replace('</head>', `${gameSupport}</head>`)
+            .replace(/<head>/i, `<head>${viewportMeta}${cspMeta}${baseTag}${dynamicLoader}`)
             .replace(/(href|src|action)=["']((?!data:|javascript:|#|mailto:|tel:).+?)["']/gi, 
                 (match, attr, url) => {
                     try {
                         const absoluteUrl = new URL(url, baseUrl).href;
-                        const encodedUrl = obfuscateUrl(absoluteUrl);
+                        const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
                         return `${attr}="/watch?url=${encodedUrl}"`;
                     } catch (e) {
                         return match;
@@ -496,6 +413,7 @@ class ContentTransformer {
                 }
             );
     }
+}
 
     static transformCss(css, baseUrl) {
         return css.replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
