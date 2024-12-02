@@ -9,6 +9,24 @@ const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
 
+// Add the functions here, right after the requires
+function obfuscateUrl(url) {
+    return btoa(encodeURIComponent(url));
+}
+
+function deobfuscateUrl(encodedUrl) {
+    return decodeURIComponent(atob(encodedUrl));
+}
+
+function normalizeUrl(url) {
+    try {
+        const parsedUrl = new URL(url);
+        return parsedUrl.href;
+    } catch (e) {
+        throw new Error('Invalid URL format');
+    }
+}
+
 // Initialize express and server
 const app = express();
 const server = http.createServer(app);
