@@ -9,7 +9,6 @@ const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
 
-// Add the functions here, right after the requires
 function obfuscateUrl(url) {
     return btoa(encodeURIComponent(url));
 }
@@ -32,7 +31,6 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Constants and configurations
 const PORT = process.env.PORT || 10000;
 const VERSION = 'v1.21';
 const DEBUG = process.env.DEBUG === 'true';
@@ -40,6 +38,11 @@ const MAX_RETRIES = 3;
 const TIMEOUT = 30000;
 const MAX_CACHE_SIZE = 1000;
 const CACHE_TTL = 600000;
+
+const cache = new AdvancedCache({
+    maxSize: MAX_CACHE_SIZE,
+    maxAge: CACHE_TTL
+});
 
 const PROCESSABLE_TYPES = [
     'text/html',
