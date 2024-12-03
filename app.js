@@ -874,31 +874,52 @@ app.get('/watch', async (req, res) => {
         
         const response = await fetch(normalizedUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': '*/*',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
                 'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive'
-            }
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1'
+            },
+            credentials: 'include'
         });
+
+        // Forward all response headers
+        for (const [key, value] of response.headers) {
+            if (!['content-length', 'content-encoding'].includes(key.toLowerCase())) {
+                res.set(key, value);
+            }
+        }
 
         const contentType = response.headers.get('content-type') || '';
         const processedContentType = handleResourceType(contentType);
         
         res.set('Content-Type', processedContentType);
 
+        // Handle non-text content
         if (!contentType.includes('text') && !contentType.includes('javascript') && !contentType.includes('css')) {
             return response.body.pipe(res);
         }
 
         let content = await response.text();
 
+        // Transform content based on type
         if (contentType.includes('html')) {
             content = await ContentTransformer.transformHtml(content, normalizedUrl);
         } else if (contentType.includes('css')) {
             content = ContentTransformer.transformCss(content, normalizedUrl);
         } else if (contentType.includes('javascript')) {
-            content = ContentTransformer.transformJavaScript(content);
+            content = ContentTransformer.transformJavaScript(content, normalizedUrl);
         }
+
+        // Cache the transformed content
+        const cacheKey = crypto.createHash('md5').update(normalizedUrl).digest('hex');
+        cache.set(cacheKey, content);
 
         res.send(content);
 
