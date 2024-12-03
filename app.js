@@ -364,54 +364,52 @@ class WebSocketManager {
 class ContentTransformer {
     static async transformHtml(html, baseUrl) {
         const viewportMeta = '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
-        const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src * data: blob: ws: wss: \'unsafe-inline\' \'unsafe-eval\'">';
         const baseTag = `<base href="${baseUrl}">`;
-        const dynamicLoader = `
+        const resourceLoader = `
             <script>
-                window.addEventListener('DOMContentLoaded', () => {
+                (function() {
+                    const originalFetch = window.fetch;
+                    const originalXHR = window.XMLHttpRequest.prototype.open;
+                    
+                    window.fetch = async function(url, options = {}) {
+                        if (url && !url.startsWith('data:')) {
+                            url = '/watch?url=' + btoa(encodeURIComponent(new URL(url, window.location.href).href));
+                        }
+                        return originalFetch(url, options);
+                    };
+
+                    XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                        if (url && !url.startsWith('data:')) {
+                            url = '/watch?url=' + btoa(encodeURIComponent(new URL(url, window.location.href).href));
+                        }
+                        return originalXHR.call(this, method, url, ...args);
+                    };
+                    
+                    // Handle dynamic script loading
                     const observer = new MutationObserver((mutations) => {
                         mutations.forEach((mutation) => {
-                            if (mutation.type === 'childList') {
-                                handleNewElements(mutation.addedNodes);
-                            }
+                            mutation.addedNodes.forEach((node) => {
+                                if (node.tagName === 'SCRIPT' && node.src) {
+                                    node.src = '/watch?url=' + btoa(encodeURIComponent(new URL(node.src, window.location.href).href));
+                                }
+                                if (node.tagName === 'LINK' && node.rel === 'stylesheet') {
+                                    node.href = '/watch?url=' + btoa(encodeURIComponent(new URL(node.href, window.location.href).href));
+                                }
+                            });
                         });
                     });
 
-                    observer.observe(document.body, {
-                        childList: true,
-                        subtree: true
+                    observer.observe(document, { 
+                        childList: true, 
+                        subtree: true 
                     });
-
-                    function handleNewElements(elements) {
-                        elements.forEach((element) => {
-                            if (element.tagName === 'SCRIPT') {
-                                loadScript(element);
-                            }
-                            if (element.tagName === 'IMG') {
-                                fixImageSource(element);
-                            }
-                        });
-                    }
-
-                    function loadScript(script) {
-                        if (script.src) {
-                            const newScript = document.createElement('script');
-                            newScript.src = '/watch?url=' + btoa(encodeURIComponent(script.src));
-                            script.parentNode.replaceChild(newScript, script);
-                        }
-                    }
-
-                    function fixImageSource(img) {
-                        if (img.src && !img.src.startsWith('data:')) {
-                            img.src = '/watch?url=' + btoa(encodeURIComponent(img.src));
-                        }
-                    }
-                });
+                })();
             </script>
         `;
 
-        return html
-            .replace(/<head>/i, `<head>${viewportMeta}${cspMeta}${baseTag}${dynamicLoader}`)
+        // Transform all resource URLs
+        let transformedHtml = html
+            .replace(/<head>/i, `<head>${viewportMeta}${baseTag}${resourceLoader}`)
             .replace(/(href|src|action)=["']((?!data:|javascript:|#|mailto:|tel:).+?)["']/gi, 
                 (match, attr, url) => {
                     try {
@@ -422,11 +420,27 @@ class ContentTransformer {
                         return match;
                     }
                 }
-            );
+            )
+            .replace(/<link[^>]*>/gi, (match) => {
+                if (match.includes('stylesheet')) {
+                    return match.replace(/href=["']((?!data:).+?)["']/i, (m, url) => {
+                        try {
+                            const absoluteUrl = new URL(url, baseUrl).href;
+                            const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
+                            return `href="/watch?url=${encodedUrl}"`;
+                        } catch (e) {
+                            return m;
+                        }
+                    });
+                }
+                return match;
+            });
+
+        return transformedHtml;
     }
 
     static transformCss(css, baseUrl) {
-        return css.replace(/url\(['"]?((?!data:).+?)['"]?\)/gi, (match, url) => {
+        return css.replace(/url\(['"]?((?!data:)[^'"())]+)['"]?\)/gi, (match, url) => {
             try {
                 const absoluteUrl = new URL(url, baseUrl).href;
                 const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
@@ -437,51 +451,30 @@ class ContentTransformer {
         });
     }
 
-    static transformJavaScript(js) {
-        return `
+    static transformJavaScript(js, baseUrl) {
+        const wrapped = `
             (function() {
-                const originalXHR = window.XMLHttpRequest;
                 const originalFetch = window.fetch;
-                const originalWebSocket = window.WebSocket;
-
-                window.XMLHttpRequest = function() {
-                    const xhr = new originalXHR();
-                    const originalOpen = xhr.open;
-                    
-                    xhr.open = function(method, url, ...args) {
-                        try {
-                            const absoluteUrl = new URL(url, window.location.href).href;
-                            const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
-                            return originalOpen.call(this, method, '/watch?url=' + encodedUrl, ...args);
-                        } catch (e) {
-                            return originalOpen.call(this, method, url, ...args);
-                        }
-                    };
-                    
-                    return xhr;
-                };
-
+                const originalXHR = window.XMLHttpRequest.prototype.open;
+                
                 window.fetch = async function(url, options = {}) {
-                    try {
-                        const absoluteUrl = new URL(url, window.location.href).href;
-                        const encodedUrl = btoa(encodeURIComponent(absoluteUrl));
-                        return originalFetch('/watch?url=' + encodedUrl, options);
-                    } catch (e) {
-                        return originalFetch(url, options);
+                    if (url && !url.startsWith('data:')) {
+                        url = '/watch?url=' + btoa(encodeURIComponent(new URL(url, '${baseUrl}').href));
                     }
+                    return originalFetch(url, options);
                 };
 
-                window.WebSocket = function(url, protocols) {
-                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    return new originalWebSocket(
-                        wsProtocol + '//' + window.location.host,
-                        protocols
-                    );
+                XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                    if (url && !url.startsWith('data:')) {
+                        url = '/watch?url=' + btoa(encodeURIComponent(new URL(url, '${baseUrl}').href));
+                    }
+                    return originalXHR.call(this, method, url, ...args);
                 };
             })();
 
             ${js}
         `;
+        return wrapped;
     }
 }
 
