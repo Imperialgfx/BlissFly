@@ -960,8 +960,12 @@ app.use((req, res, next) => {
     next();
 });
 
+// Set keep-alive timeout and headers timeout
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 120000;
+
 // Start server
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Version: ${VERSION}`);
     if (DEBUG) console.log('Debug mode enabled');
