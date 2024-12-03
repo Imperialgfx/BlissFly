@@ -866,17 +866,69 @@ app.get('/', (req, res) => {
 app.get('/watch', async (req, res) => {
     try {
         const encodedUrl = req.query.url;
-        if (!encodedUrl) return res.status(400).send('URL parameter required');
+        if (!encodedUrl) {
+            return res.status(400).send('URL parameter required');
+        }
 
         const url = deobfuscateUrl(encodedUrl);
         const normalizedUrl = normalizeUrl(url);
         
-        const response = await fetch(normalizedUrl);
-        const transformedResponse = await BlissflyHandler.transformResponse(response, normalizedUrl);
+        // Check cache first
+        const cacheKey = crypto.createHash('md5').update(normalizedUrl).digest('hex');
+        const cachedContent = cache.get(cacheKey);
+        if (cachedContent) {
+            return res.send(cachedContent);
+        }
+
+        const response = await fetch(normalizedUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1'
+            }
+        });
+
+        const contentType = response.headers.get('content-type') || '';
         
-        res.send(transformedResponse);
+        // Handle binary files directly
+        if (!contentType.includes('text') && 
+            !contentType.includes('javascript') && 
+            !contentType.includes('css') && 
+            !contentType.includes('html')) {
+            return response.body.pipe(res);
+        }
+
+        let content = await response.text();
+        const bundle = new BlissFlyBundle(new BlissFlyClient());
+
+        // Transform content based on type
+        if (contentType.includes('html')) {
+            content = await bundle.rewriteHtml(content, normalizedUrl);
+            res.set('Content-Type', 'text/html');
+        } else if (contentType.includes('css')) {
+            content = bundle.rewriteCss(content, normalizedUrl);
+            res.set('Content-Type', 'text/css');
+        } else if (contentType.includes('javascript')) {
+            content = bundle.rewriteJs(content);
+            res.set('Content-Type', 'application/javascript');
+        } else {
+            res.set('Content-Type', contentType);
+        }
+
+        // Cache the transformed content
+        cache.set(cacheKey, content);
+
+        res.send(content);
+
     } catch (error) {
-        console.error('Blissfly Error:', error);
+        console.error('BlissFly Error:', error);
         res.status(500).send('Error loading content');
     }
 });
