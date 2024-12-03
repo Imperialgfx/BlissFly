@@ -2,20 +2,20 @@ const { EventEmitter } = require('events');
 const { URL } = require('url');
 
 class BlissFlyClient extends EventEmitter {
-    constructor(window = self, bareClient, worker = !window.window) {
+    constructor(window = global, bareClient, worker = false) {
         super();
         this.window = window;
         this.nativeMethods = {
-            fnToString: this.window.Function.prototype.toString,
-            defineProperty: this.window.Object.defineProperty,
-            getOwnPropertyDescriptor: this.window.Object.getOwnPropertyDescriptor,
-            getOwnPropertyNames: this.window.Object.getOwnPropertyNames,
-            keys: this.window.Object.keys,
-            getOwnPropertySymbols: this.window.Object.getOwnPropertySymbols,
-            isArray: this.window.Array.isArray,
-            setPrototypeOf: this.window.Object.setPrototypeOf,
-            isExtensible: this.window.Object.isExtensible,
-            Map: this.window.Map
+            fnToString: Function.prototype.toString,
+            defineProperty: Object.defineProperty,
+            getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
+            getOwnPropertyNames: Object.getOwnPropertyNames,
+            keys: Object.keys,
+            getOwnPropertySymbols: Object.getOwnPropertySymbols,
+            isArray: Array.isArray,
+            setPrototypeOf: Object.setPrototypeOf,
+            isExtensible: Object.isExtensible,
+            Map: Map
         };
         this.worker = worker;
         this.bareClient = bareClient;
@@ -38,7 +38,7 @@ class LocationApi {
     constructor(bf) {
         this.bf = bf;
         this.window = bf.window;
-        this.location = this.window.location;
+        this.location = this.window.location || {};
     }
 }
 
@@ -46,10 +46,10 @@ class DocumentApi {
     constructor(bf) {
         this.bf = bf;
         this.window = bf.window;
-        this.Document = this.window.Document;
-        this.docProto = this.Document.prototype;
-        this.title = bf.nativeMethods.getOwnPropertyDescriptor(this.docProto, "title");
-        this.referrer = bf.nativeMethods.getOwnPropertyDescriptor(this.docProto, "referrer");
+        this.Document = {};
+        this.docProto = {};
+        this.title = "";
+        this.referrer = "";
     }
 }
 
@@ -57,10 +57,10 @@ class ElementApi {
     constructor(bf) {
         this.bf = bf;
         this.window = bf.window;
-        this.Element = this.window.Element;
-        this.elemProto = this.Element.prototype;
-        this.innerHTML = bf.nativeMethods.getOwnPropertyDescriptor(this.elemProto, "innerHTML");
-        this.outerHTML = bf.nativeMethods.getOwnPropertyDescriptor(this.elemProto, "outerHTML");
+        this.Element = {};
+        this.elemProto = {};
+        this.innerHTML = "";
+        this.outerHTML = "";
     }
 }
 
@@ -68,10 +68,10 @@ class StyleApi {
     constructor(bf) {
         this.bf = bf;
         this.window = bf.window;
-        this.CSSStyleDeclaration = this.window.CSSStyleDeclaration;
-        this.cssStyleProto = this.CSSStyleDeclaration.prototype;
-        this.getPropertyValue = this.cssStyleProto.getPropertyValue;
-        this.setProperty = this.cssStyleProto.setProperty;
+        this.CSSStyleDeclaration = {};
+        this.cssStyleProto = {};
+        this.getPropertyValue = () => {};
+        this.setProperty = () => {};
     }
 }
 
