@@ -1,3 +1,6 @@
+const { EventEmitter } = require('events');
+const { URL } = require('url');
+
 class BlissFlyClient extends EventEmitter {
     constructor(window = self, bareClient, worker = !window.window) {
         super();
@@ -28,6 +31,14 @@ class BlissFlyClient extends EventEmitter {
 
     sourceUrl(url) {
         return this.codec.decode(url.slice(this.prefix.length));
+    }
+}
+
+class LocationApi {
+    constructor(bf) {
+        this.bf = bf;
+        this.window = bf.window;
+        this.location = this.window.location;
     }
 }
 
@@ -63,3 +74,5 @@ class StyleApi {
         this.setProperty = this.cssStyleProto.setProperty;
     }
 }
+
+module.exports = { BlissFlyClient, LocationApi, DocumentApi, ElementApi, StyleApi };
