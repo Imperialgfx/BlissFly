@@ -1,10 +1,20 @@
 const { EventEmitter } = require('events');
 const { URL } = require('url');
+const { Buffer } = require('buffer');
 
 class BlissFlyClient extends EventEmitter {
     constructor(window = global, bareClient, worker = false) {
         super();
         this.window = window;
+        this.codec = {
+            encode: (url) => {
+                return Buffer.from(url).toString('base64');
+            },
+            decode: (encoded) => {
+                return Buffer.from(encoded, 'base64').toString();
+            }
+        };
+        this.prefix = '/service/';
         this.nativeMethods = {
             fnToString: Function.prototype.toString,
             defineProperty: Object.defineProperty,
