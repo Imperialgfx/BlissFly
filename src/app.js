@@ -8,7 +8,8 @@ const WebSocket = require('ws');
 const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
-const BlissflyHandler = require('./bf.handler.js');
+const { BlissFlyClient } = require('./bf.handler.js');
+const { BlissFlyBundle } = require('./bf.bundle.js');
 
 // Initialize express and server
 const app = express();
