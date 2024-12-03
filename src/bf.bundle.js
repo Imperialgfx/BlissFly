@@ -26,6 +26,7 @@ class BlissFlyBundle {
 class HTMLRewriter {
     constructor(ctx) {
         this.ctx = ctx;
+        this.js = new JSRewriter(ctx);
     }
 
     async rewrite(document, baseUrl) {
@@ -65,7 +66,7 @@ class HTMLRewriter {
     async rewriteScript(element) {
         if (element.childNodes && element.childNodes[0]) {
             const content = element.childNodes[0].value;
-            element.childNodes[0].value = this.ctx.js.rewrite(content);
+            element.childNodes[0].value = this.js.rewrite(content);
         }
     }
 }
@@ -92,7 +93,10 @@ class JSRewriter {
     }
 
     rewrite(js) {
-        return js;
+        // Basic JS rewriting logic
+        if (!js) return '';
+        return js.replace(/((?:(?:window|document|location)\.[a-zA-Z_$][a-zA-Z0-9_$]*)|(?:location))/g, 
+            match => `__bf.${match}`);
     }
 }
 
