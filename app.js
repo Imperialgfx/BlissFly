@@ -872,53 +872,57 @@ app.get('/watch', async (req, res) => {
         const url = deobfuscateUrl(encodedUrl);
         const normalizedUrl = normalizeUrl(url);
         
+        // Check cache first
+        const cacheKey = crypto.createHash('md5').update(normalizedUrl).digest('hex');
+        const cachedContent = cache.get(cacheKey);
+        if (cachedContent) {
+            return res.send(cachedContent);
+        }
+
         const response = await fetch(normalizedUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept': '*/*',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Accept-Encoding': 'gzip, deflate, br',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
+                'Connection': 'keep-alive',
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'none',
                 'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1'
-            },
-            credentials: 'include'
+                'Upgrade-Insecure-Requests': '1',
+                'Referer': normalizedUrl
+            }
         });
 
-        // Forward all response headers
-        for (const [key, value] of response.headers) {
-            if (!['content-length', 'content-encoding'].includes(key.toLowerCase())) {
-                res.set(key, value);
-            }
-        }
-
         const contentType = response.headers.get('content-type') || '';
-        const processedContentType = handleResourceType(contentType);
         
-        res.set('Content-Type', processedContentType);
-
-        // Handle non-text content
-        if (!contentType.includes('text') && !contentType.includes('javascript') && !contentType.includes('css')) {
-            return response.body.pipe(res);
+        // Handle binary files (images, fonts, etc.)
+        if (!contentType.includes('text') && 
+            !contentType.includes('javascript') && 
+            !contentType.includes('css') && 
+            !contentType.includes('html')) {
+            response.body.pipe(res);
+            return;
         }
 
         let content = await response.text();
 
-        // Transform content based on type
-        if (contentType.includes('html')) {
-            content = await ContentTransformer.transformHtml(content, normalizedUrl);
-        } else if (contentType.includes('css')) {
-            content = ContentTransformer.transformCss(content, normalizedUrl);
-        } else if (contentType.includes('javascript')) {
+        // Set appropriate content type
+        if (contentType.includes('javascript')) {
+            res.set('Content-Type', 'application/javascript');
             content = ContentTransformer.transformJavaScript(content, normalizedUrl);
+        } else if (contentType.includes('css')) {
+            res.set('Content-Type', 'text/css');
+            content = ContentTransformer.transformCss(content, normalizedUrl);
+        } else if (contentType.includes('html')) {
+            res.set('Content-Type', 'text/html');
+            content = await ContentTransformer.transformHtml(content, normalizedUrl);
+        } else {
+            res.set('Content-Type', contentType);
         }
 
         // Cache the transformed content
-        const cacheKey = crypto.createHash('md5').update(normalizedUrl).digest('hex');
         cache.set(cacheKey, content);
 
         res.send(content);
