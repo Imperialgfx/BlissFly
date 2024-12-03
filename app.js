@@ -8,6 +8,7 @@ const WebSocket = require('ws');
 const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
+const BlissflyHandler = require('./src/bf.handler.js');
 
 // Initialize express and server
 const app = express();
@@ -865,71 +866,18 @@ app.get('/', (req, res) => {
 app.get('/watch', async (req, res) => {
     try {
         const encodedUrl = req.query.url;
-        if (!encodedUrl) {
-            return res.status(400).send('URL parameter is required');
-        }
+        if (!encodedUrl) return res.status(400).send('URL parameter required');
 
         const url = deobfuscateUrl(encodedUrl);
         const normalizedUrl = normalizeUrl(url);
         
-        // Check cache first
-        const cacheKey = crypto.createHash('md5').update(normalizedUrl).digest('hex');
-        const cachedContent = cache.get(cacheKey);
-        if (cachedContent) {
-            return res.send(cachedContent);
-        }
-
-        const response = await fetch(normalizedUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1',
-                'Referer': normalizedUrl
-            }
-        });
-
-        const contentType = response.headers.get('content-type') || '';
+        const response = await fetch(normalizedUrl);
+        const transformedResponse = await BlissflyHandler.transformResponse(response, normalizedUrl);
         
-        // Handle binary files (images, fonts, etc.)
-        if (!contentType.includes('text') && 
-            !contentType.includes('javascript') && 
-            !contentType.includes('css') && 
-            !contentType.includes('html')) {
-            response.body.pipe(res);
-            return;
-        }
-
-        let content = await response.text();
-
-        // Set appropriate content type
-        if (contentType.includes('javascript')) {
-            res.set('Content-Type', 'application/javascript');
-            content = ContentTransformer.transformJavaScript(content, normalizedUrl);
-        } else if (contentType.includes('css')) {
-            res.set('Content-Type', 'text/css');
-            content = ContentTransformer.transformCss(content, normalizedUrl);
-        } else if (contentType.includes('html')) {
-            res.set('Content-Type', 'text/html');
-            content = await ContentTransformer.transformHtml(content, normalizedUrl);
-        } else {
-            res.set('Content-Type', contentType);
-        }
-
-        // Cache the transformed content
-        cache.set(cacheKey, content);
-
-        res.send(content);
-
+        res.send(transformedResponse);
     } catch (error) {
-        console.error('Proxy Error:', error);
-        res.status(500).send(`Error loading content: ${error.message}`);
+        console.error('Blissfly Error:', error);
+        res.status(500).send('Error loading content');
     }
 });
 
