@@ -11,6 +11,7 @@ const { URL } = require('url');
 const ContentRewriter = require('./rewrite/index.js');
 const BlissFlyWebSocket = require('./client/websocket.js');
 const HookEvent = require('./client/hook.js');
+const rewriter = require('./rewrite/index.js');
 
 // Initialize express and server
 const app = express();
