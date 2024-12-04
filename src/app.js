@@ -8,16 +8,22 @@ const WebSocket = require('ws');
 const fetch = require('node-fetch');
 const { Buffer } = require('buffer');
 const { URL } = require('url');
-const BlissFlyRewriter = require('./rewrite/html.js');
+const ContentRewriter = require('./rewrite/index.js');
 const BlissFlyWebSocket = require('./client/websocket.js');
 const HookEvent = require('./client/hook.js');
-const { ContentRewriter } = require('./rewrite/index.js');
-const rewriter = new ContentRewriter();
 
-// Initialize express and server
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+const rewriter = ContentRewriter;
+
+const PORT = process.env.PORT || 10000;
+const VERSION = 'v1.21';
+const DEBUG = process.env.DEBUG === 'true';
+const MAX_RETRIES = 3;
+const TIMEOUT = 30000;
+const MAX_CACHE_SIZE = 1000;
+const CACHE_TTL = 600000;
 
 // Middleware configurations
 app.use(express.json());
@@ -876,6 +882,7 @@ app.get('/watch', async (req, res) => {
         if(type?.includes('html')) {
             const html = await response.text();
             const transformed = rewriter.rewriteHTML(html, url);
+            res.set('Content-Type', 'text/html');
             res.send(transformed);
         } else {
             response.body.pipe(res);
