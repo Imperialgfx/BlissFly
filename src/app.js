@@ -18,14 +18,16 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const rewriter = ContentRewriter;
 
-// Single declaration of all constants
-const PORT = process.env.PORT || 10000;
-const VERSION = 'v1.21';
-const DEBUG = process.env.DEBUG === 'true';
-const MAX_RETRIES = 3;
-const TIMEOUT = 30000;
-const MAX_CACHE_SIZE = 1000;
-const CACHE_TTL = 600000;
+// Configuration constants
+const CONFIG = {
+    PORT: process.env.PORT || 10000,
+    VERSION: 'v1.21',
+    DEBUG: process.env.DEBUG === 'true',
+    MAX_RETRIES: 3,
+    TIMEOUT: 30000,
+    MAX_CACHE_SIZE: 1000,
+    CACHE_TTL: 600000
+};
 
 // Middleware configurations
 app.use(express.json());
