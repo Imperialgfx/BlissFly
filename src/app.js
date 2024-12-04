@@ -11,6 +11,8 @@ const { URL } = require('url');
 const BlissFlyRewriter = require('./rewrite/html.js');
 const BlissFlyWebSocket = require('./client/websocket.js');
 const HookEvent = require('./client/hook.js');
+const { ContentRewriter } = require('./rewrite/index.js');
+const rewriter = new ContentRewriter();
 
 // Initialize express and server
 const app = express();
@@ -871,12 +873,11 @@ app.get('/watch', async (req, res) => {
         const response = await fetch(url);
         const type = response.headers.get('content-type');
         
-        if(type.includes('html')) {
+        if(type?.includes('html')) {
             const html = await response.text();
-            const transformed = await BlissFlyRewriter.transformHtml(html, url);
+            const transformed = rewriter.rewriteHTML(html, url);
             res.send(transformed);
         } else {
-            // Handle other content types
             response.body.pipe(res);
         }
     } catch(err) {
