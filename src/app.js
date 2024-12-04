@@ -12,11 +12,13 @@ const ContentRewriter = require('./rewrite/index.js');
 const BlissFlyWebSocket = require('./client/websocket.js');
 const HookEvent = require('./client/hook.js');
 
+// Initialize express and server
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const rewriter = ContentRewriter;
 
+// Single declaration of all constants
 const PORT = process.env.PORT || 10000;
 const VERSION = 'v1.21';
 const DEBUG = process.env.DEBUG === 'true';
