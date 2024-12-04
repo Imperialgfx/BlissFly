@@ -1,13 +1,15 @@
 const BlissFlyRewriter = require('./html.js');
 
-class ContentRewriter {
-    constructor() {
-        this.rewriter = BlissFlyRewriter;
+const rewriter = {
+    rewriteHTML: (html, baseUrl) => {
+        return BlissFlyRewriter.transformHtml(html, baseUrl);
+    },
+    rewriteJS: (js, baseUrl) => {
+        return BlissFlyRewriter.transformJavaScript(js, baseUrl);
+    },
+    rewriteCSS: (css, baseUrl) => {
+        return BlissFlyRewriter.transformCss(css, baseUrl);
     }
+};
 
-    rewriteHTML(html, baseUrl) {
-        return this.rewriter.transformHtml(html, baseUrl);
-    }
-}
-
-module.exports = ContentRewriter;
+module.exports = rewriter;
