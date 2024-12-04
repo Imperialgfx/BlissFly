@@ -1,3 +1,5 @@
+const EventEmitter = require('events');
+
 class BlissFlyWebSocket extends EventEmitter {
     constructor(ctx) {
         super();
