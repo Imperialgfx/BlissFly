@@ -1,22 +1,21 @@
 class BlissFlyRewriter {
-    static async transformHtml(html, baseUrl) {
-        // Add UV-style meta injection
+    static transformHtml(html, baseUrl) {
+        // Add meta injection
         const meta = {
             url: baseUrl,
             base: new URL(baseUrl).origin,
-            originalHtml: html,
         };
 
-        // Inject BlissFly :)
+        // Inject BlissFly client
         const clientScript = `
             <script>
                 window.__blissfly = {
-                    meta: ${JSON.stringify(meta)},
-                    handler: ${this.handler.toString()},
+                    meta: ${JSON.stringify(meta)}
                 };
             </script>
         `;
 
+        // Transform URLs and inject client
         return html
             .replace('</head>', `${clientScript}</head>`)
             .replace(/(?<=<(?:a|link|img|script|iframe|source|embed).*?(?:href|src)=["'])(.*?)(?=["'])/g, 
@@ -32,3 +31,5 @@ class BlissFlyRewriter {
         }
     }
 }
+
+module.exports = BlissFlyRewriter;
